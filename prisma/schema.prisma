@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  KASIR
+}
+
+enum PcStatus {
+  IDLE
+  ACTIVE
+  OFFLINE
+}
+
+enum AccountType {
+  VOUCHER
+  MEMBER
+}
+
+enum AccountStatus {
+  ACTIVE
+  REVOKED
+  EXPIRED
+}
+
+enum SessionStatus {
+  BERJALAN
+  SELESAI
+  DISTOP
+}
+
+enum TransactionType {
+  BELI_BARU
+  TOPUP
+  KOREKSI
+}
+
+model User {
+  id            String   @id @default(uuid())
+  username      String   @unique
+  passwordHash  String
+  role          Role
+  createdAt     DateTime @default(now())
+  transactions  Transaction[]
+}
+
+model Pc {
+  id               String   @id @default(uuid())
+  namaPc           String
+  ipClient         String
+  status           PcStatus @default(IDLE)
+  lastHeartbeatAt  DateTime?
+  agentToken       String   @unique
+  sessions         Session[]
+}
+
+model Account {
+  id             String        @id @default(uuid())
+  tipe           AccountType
+  kodeUnik       String?       @unique
+  nama           String?
+  passwordHash   String
+  sisaWaktuDetik Int           @default(0)
+  status         AccountStatus @default(ACTIVE)
+  createdAt      DateTime      @default(now())
+  lastUsedAt     DateTime?
+  sessions       Session[]
+  transactions   Transaction[]
+}
+
+model Session {
+  id                    String        @id @default(uuid())
+  pcId                  String
+  pc                    Pc            @relation(fields: [pcId], references: [id])
+  accountId             String
+  account               Account       @relation(fields: [accountId], references: [id])
+  waktuMulai            DateTime      @default(now())
+  waktuSelesai          DateTime?
+  durasiTerpakaiDetik   Int           @default(0)
+  status                SessionStatus @default(BERJALAN)
+  disconnectedAt        DateTime?
+}
+
+model Transaction {
+  id           String           @id @default(uuid())
+  accountId    String
+  account      Account          @relation(fields: [accountId], references: [id])
+  nominal      Int
+  durasiMenit  Int
+  durasiDetik  Int              @default(0)
+  jenis        TransactionType
+  kasirId      String
+  kasir        User             @relation(fields: [kasirId], references: [id])
+  dibatalkan   DateTime?
+  dibatalkanOleh String?
+  createdAt    DateTime         @default(now())
+}
+
+model DailyReport {
+  id                 String   @id @default(uuid())
+  tanggal            DateTime @unique @db.Date
+  totalLogin         Int      @default(0)
+  voucherTerbentuk   Int      @default(0)
+  voucherTopup       Int      @default(0)
+  memberTerbentuk    Int      @default(0)
+  memberTopup        Int      @default(0)
+  pendapatanVoucher  Int      @default(0)
+  pendapatanMember   Int      @default(0)
+}
+
+model Setting {
+  key   String @id
+  value String
+}

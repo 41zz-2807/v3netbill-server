@@ -1,8 +1,9 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { LoginDto } from './dto/login.dto.js';
+import { CreateUserDto } from './dto/create-user.dto.js';
 import { Role } from '@prisma/client';
 
 @Injectable()
@@ -37,5 +38,33 @@ export class AuthService {
 
   async hashPassword(password: string): Promise<string> {
     return bcrypt.hash(password, 10);
+  }
+
+  async createUser(createUserDto: CreateUserDto) {
+    const username = createUserDto.username.trim();
+
+    const existing = await this.prisma.user.findUnique({
+      where: { username },
+    });
+    if (existing) {
+      throw new ConflictException(`Username "${username}" sudah dipakai`);
+    }
+
+    return this.prisma.user.create({
+      data: {
+        username,
+        passwordHash: await this.hashPassword(createUserDto.password),
+        role: createUserDto.role,
+      },
+      select: { id: true, username: true, role: true, createdAt: true },
+    });
+  }
+
+  /** Daftar user untuk panel pengaturan. passwordHash tidak pernah dikembalikan. */
+  async listUsers() {
+    return this.prisma.user.findMany({
+      orderBy: { createdAt: 'desc' },
+      select: { id: true, username: true, role: true, createdAt: true },
+    });
   }
 }

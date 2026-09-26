@@ -108,6 +108,17 @@ export class AccountsService {
   async createMember(createMemberDto: CreateMemberDto, kasirId: string) {
     this.validateNominal(createMemberDto.nominal);
 
+    const existingMember = await this.prisma.account.findFirst({
+      where: {
+        tipe: AccountType.MEMBER,
+        nama: createMemberDto.nama,
+        status: { not: AccountStatus.REVOKED },
+      },
+    });
+    if (existingMember) {
+      throw new ConflictException('Member dengan nama tersebut sudah ada');
+    }
+
     const sisaWaktuDetik = await this.calculateSisaWaktu(createMemberDto.nominal);
     const passwordHash = await bcrypt.hash(createMemberDto.password, 10);
 
@@ -151,6 +162,12 @@ export class AccountsService {
       throw new NotFoundException('Account not found');
     }
 
+    if (account.status === AccountStatus.REVOKED) {
+      throw new BadRequestException('Voucher sudah direvoke (nonaktifkan) — tidak bisa di-topup');
+    }
+    if (account.status === AccountStatus.EXPIRED) {
+      throw new BadRequestException('Voucher sudah expired — tidak bisa di-topup');
+    }
     if (account.status !== AccountStatus.ACTIVE) {
       throw new BadRequestException('Account tidak aktif');
     }

@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { ActivityLogService } from '../activity-log/activity-log.service.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -26,6 +27,7 @@ const BACKUP_DIR = path.join(DATA_DIR, 'backup');
 const MAX_INSTALLER_SIZE = 200 * 1024 * 1024;
 const MAX_WALLPAPER_SIZE = 10 * 1024 * 1024;
 const BACKUP_RETENTION_DAYS = 30;
+const ACTIVITY_LOG_RETENTION_DAYS = 30;
 
 export interface InstallerMeta {
   filename: string;
@@ -40,6 +42,7 @@ export class SettingsService implements OnApplicationBootstrap {
   constructor(
     private prisma: PrismaService,
     private schedulerRegistry: SchedulerRegistry,
+    private activityLogService: ActivityLogService,
   ) {
     for (const dir of [INSTALLER_DIR, WALLPAPER_DIR, BACKUP_DIR]) {
       fs.mkdirSync(dir, { recursive: true });
@@ -262,6 +265,19 @@ export class SettingsService implements OnApplicationBootstrap {
       await this.cleanupOldBackups();
     } catch (err) {
       this.logger.error(`Auto-backup gagal: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_2AM, { name: 'cleanup-activity-logs' })
+  async handleCleanupActivityLogs(): Promise<void> {
+    this.logger.log('Cron cleanup activity logs dijalankan');
+    try {
+      const removed = await this.activityLogService.deleteOldLogs(ACTIVITY_LOG_RETENTION_DAYS);
+      if (removed > 0) {
+        this.logger.log(`Dihapus ${removed} activity log lama (lebih dari ${ACTIVITY_LOG_RETENTION_DAYS} hari)`);
+      }
+    } catch (err) {
+      this.logger.error(`Cleanup activity logs gagal: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 

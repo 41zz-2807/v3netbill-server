@@ -2,7 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, BadRequestException, ConflictExcep
 import { PrismaService } from '../prisma/prisma.service.js';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'node:crypto';
-import { AccountStatus, SessionStatus, PcStatus, AccountType, TransactionType } from '@prisma/client';
+import { AccountStatus, SessionStatus, PcStatus, AccountType, TransactionType, Prisma } from '@prisma/client';
 
 export interface DashboardPcInfo {
   id: string;
@@ -83,17 +83,25 @@ export class SessionService implements OnModuleDestroy {
     return pc?.agentToken === agentToken;
   }
 
-  async registerPc(pcId: string): Promise<void> {
+  async registerPc(pcId: string, ipTerlihat?: string | null): Promise<void> {
     const runningSession = await this.prisma.session.findFirst({
       where: { pcId, status: SessionStatus.BERJALAN },
     });
-    await this.prisma.pc.update({
-      where: { id: pcId },
-      data: {
-        status: runningSession ? PcStatus.ACTIVE : PcStatus.IDLE,
-        lastHeartbeatAt: new Date(),
-      },
-    });
+    const data: Prisma.PcUpdateInput = {
+      status: runningSession ? PcStatus.ACTIVE : PcStatus.IDLE,
+      lastHeartbeatAt: new Date(),
+    };
+    // Hanya tulis IP kalau berubah, supaya tidak menyentuh baris Pc tiap reconnect.
+    if (ipTerlihat) {
+      const pc = await this.prisma.pc.findUnique({
+        where: { id: pcId },
+        select: { ipClient: true },
+      });
+      if (pc && pc.ipClient !== ipTerlihat) {
+        data.ipClient = ipTerlihat;
+      }
+    }
+    await this.prisma.pc.update({ where: { id: pcId }, data });
     this.gatewayEvents?.broadcastPcUpdate();
   }
 

@@ -9,10 +9,12 @@ import {
   MessageBody,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
+import { isIP } from 'node:net';
 import { SessionService, SessionGatewayEvents } from './session.service.js';
 import { JwtService } from '@nestjs/jwt';
 import { Logger, UnauthorizedException } from '@nestjs/common';
 import { Role, AccountType } from '@prisma/client';
+import { ActivityLogService } from '../activity-log/activity-log.service.js';
 
 @WebSocketGateway({
   cors: {
@@ -32,6 +34,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   constructor(
     private sessionService: SessionService,
     private jwtService: JwtService,
+    private activityLogService: ActivityLogService,
   ) {}
 
   afterInit(server: Server): void {
@@ -42,18 +45,22 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   async handleConnection(client: Socket): Promise<void> {
     this.logger.log(`Client connected: ${client.id}`);
 
-    // Dashboard login: verifikasi JWT di handshake auth → simpan role + userId.
+    // Dashboard login: verifikasi JWT di handshake auth → simpan role + userId + username.
+    // `username` wajib disimpan supaya aktivitas (kunci/matikan PC) bisa dicatat
+    // atas nama orangnya, bukan hanya role.
     const authToken = (client.handshake.auth as { token?: string } | undefined)?.token;
     if (authToken) {
       try {
-        const payload = await this.jwtService.verifyAsync<{ role: Role; sub?: string }>(authToken);
+        const payload = await this.jwtService.verifyAsync<{ role: Role; sub?: string; username?: string }>(authToken);
         if (payload.role === Role.ADMIN || payload.role === Role.KASIR) {
           client.data.role = payload.role;
           client.data.userId = payload.sub;
+          client.data.username = payload.username;
         }
       } catch {
         client.data.role = undefined;
         client.data.userId = undefined;
+        client.data.username = undefined;
       }
     }
 
@@ -87,11 +94,30 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     this.pcSocketMap.set(pcId, client.id);
     this.socketPcMap.set(client.id, pcId);
 
-    await this.sessionService.registerPc(pcId);
+    // IP diamati dari koneksi socket (bukan diisi manual admin) supaya tetap
+    // akurat walau PC klien memakai DHCP dan IP-nya berganti.
+    const ipTerlihat = this.alamatIp(client);
+    await this.sessionService.registerPc(pcId, ipTerlihat);
     await this.broadcastPcUpdate();
 
-    this.logger.log(`PC ${pcId} registered with socket ${client.id}`);
+    this.logger.log(
+      `PC ${pcId} registered with socket ${client.id}` +
+        (ipTerlihat ? ` (ip ${ipTerlihat} via ${this.sumberIp(client)})` : ' (ip tidak terbaca)'),
+    );
     return true;
+  }
+
+  /** Nama header yang dipakai untuk memperoleh IP — aids diagnosis topologi. */
+  private sumberIp(client: Socket): string {
+    const header = client.handshake.headers as Record<string, string | string[] | undefined>;
+    const ada = (kunci: string): boolean => {
+      const v = header[kunci.toLowerCase()];
+      return Array.isArray(v) ? !!v[0] : !!v;
+    };
+    if (ada('cf-connecting-ip')) return 'cf-connecting-ip';
+    if (ada('x-real-ip')) return 'x-real-ip';
+    if (ada('x-forwarded-for')) return 'x-forwarded-for';
+    return 'socket';
   }
 
   private async registerAgentFromHandshake(client: Socket, pcId: string): Promise<boolean> {
@@ -99,6 +125,10 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     const qPcId = q?.pcId;
     const qAgentToken = q?.agentToken;
     if (typeof qPcId !== 'string' || typeof qAgentToken !== 'string' || qPcId !== pcId) {
+      this.logger.warn(
+        `Re-registrasi dari handshake gagal untuk PC ${pcId} (socket ${client.id}): ` +
+          `pcId handshake=${typeof qPcId === 'string' ? qPcId : '<kosong>'} agentToken=${typeof qAgentToken === 'string' ? '<ada>' : '<kosong>'}`,
+      );
       return false;
     }
     return this.registerAgent(client, qPcId, qAgentToken);
@@ -109,6 +139,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
 
     const pcId = this.socketPcMap.get(client.id);
     if (pcId) {
+      this.logger.warn(`PC ${pcId} terputus dari server (socket ${client.id})`);
       this.socketPcMap.delete(client.id);
       this.pcSocketMap.delete(pcId);
       await this.sessionService.handleDisconnect(pcId);
@@ -142,6 +173,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     if (registeredPcId !== pcId) {
       const ok = await this.registerAgentFromHandshake(client, pcId);
       if (!ok) {
+        this.logger.warn(`Heartbeat PC ${pcId} ditolak: socket ${client.id} belum terdaftar valid`);
         return { success: false };
       }
     }
@@ -239,10 +271,22 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   }
 
   broadcastActivityLog(event: string, payload: Record<string, unknown>): void {
-    this.server.to('dashboard').emit('dashboard:log', {
+    const logEntry = {
       event,
       ...payload,
       at: new Date().toISOString(),
+    };
+    this.server.to('dashboard').emit('dashboard:log', logEntry);
+
+    // Save to database (fire and forget)
+    this.activityLogService.create({
+      event,
+      detail: JSON.stringify(payload),
+      pcId: (payload.pcId as string) ?? null,
+      accountId: (payload.accountId as string) ?? null,
+      kasirId: (payload.kasirId as string) ?? null,
+    }).catch((err) => {
+      this.logger.error(`Failed to save activity log: ${err.message}`);
     });
   }
 
@@ -289,6 +333,8 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     this.broadcastActivityLog('session:started_dashboard', {
       pcId,
       akun: result.account?.kodeUnik ?? result.account?.nama,
+      by: this.actorName(client),
+      kasirId: client.data.userId,
     });
     return { success: true, sessionId: result.sessionId };
   }
@@ -341,7 +387,11 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
     await this.sessionService.unlockPc(pcId);
     this.server.to(socketId).emit('admin:lock', { pcId });
-    this.broadcastActivityLog('pc_lock', { pcId, by: client.data.role });
+    this.broadcastActivityLog('pc_lock', {
+      pcId,
+      by: this.actorName(client),
+      kasirId: client.data.userId,
+    });
     await this.broadcastPcUpdate();
     return { success: true, message: 'Perintah kunci terkirim' };
   }
@@ -361,7 +411,11 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
     await this.sessionService.unlockPc(pcId);
     this.server.to(socketId).emit('admin:shutdown', { pcId });
-    this.broadcastActivityLog('pc_shutdown', { pcId, by: client.data.role });
+    this.broadcastActivityLog('pc_shutdown', {
+      pcId,
+      by: this.actorName(client),
+      kasirId: client.data.userId,
+    });
     await this.broadcastPcUpdate();
     return { success: true, message: 'Perintah mati terkirim' };
   }
@@ -373,5 +427,43 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
     this.logger.warn(`Dashboard ${client.id} mencoba kontrol tanpa role yang sah`);
     return false;
+  }
+
+  /** IP asli PC klien.
+   *
+   *  Bila agent konek lewat Cloudflare Tunnel, `handshake.address` hanya berisi IP
+   *  tunnel connector di host kita — bukan IP PC. Cloudflare menaruh IP asli di header
+   *  `CF-Connecting-IP` (fallback umum: `X-Real-IP`, lalu entri pertama
+   *  `X-Forwarded-For`). Koneksi langsung dari LAN tidak mengirim header itu, jadi
+   *  `handshake.address` tetap dipakai sebagai fallback terakhir.
+   *
+   *  Semua nilai dibersihkan dari bentuk IPv6-mapped IPv4 (`::ffff:192.168.1.5`).
+   *  Null bila tidak ada kandidat yang berupa IP valid. */
+  private alamatIp(client: Socket): string | null {
+    const header = client.handshake.headers as Record<string, string | string[] | undefined>;
+    const ambil = (kunci: string): string | undefined => {
+      const v = header[kunci.toLowerCase()];
+      return Array.isArray(v) ? v[0] : v;
+    };
+
+    const kandidat = [
+      ambil('cf-connecting-ip'),
+      ambil('x-real-ip'),
+      ambil('x-forwarded-for')?.split(',')[0],
+      client.handshake.address,
+    ];
+
+    for (const mentah of kandidat) {
+      if (!mentah) continue;
+      const ip = mentah.trim().replace(/^::ffff:/i, '');
+      if (isIP(ip)) return ip;
+    }
+    return null;
+  }
+
+  /** Nama orang yang koneksi ke dashboard, untuk jejak aktivitas.
+   *  Fallback ke role bila username tidak ada (mis. token lama). */
+  private actorName(client: Socket): string {
+    return client.data.username ?? client.data.role ?? 'unknown';
   }
 }

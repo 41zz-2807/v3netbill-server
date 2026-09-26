@@ -118,3 +118,15 @@ model Setting {
   key   String @id
   value String
 }
+
+model ActivityLog {
+  id        String   @id @default(uuid())
+  event     String
+  detail    String?
+  pcId      String?
+  accountId String?
+  kasirId   String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

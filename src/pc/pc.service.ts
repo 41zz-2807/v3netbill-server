@@ -18,7 +18,10 @@ export class PcService {
     const agentToken = randomUUID();
     return this.prisma.pc.create({
       data: {
-        ...createPcDto,
+        namaPc: createPcDto.namaPc,
+        // Kolom NOT NULL tanpa default; string kosong berarti "belum pernah
+        // teramati" dan akan terisi begitu agent connect.
+        ipClient: createPcDto.ipClient ?? '',
         agentToken,
       },
     });

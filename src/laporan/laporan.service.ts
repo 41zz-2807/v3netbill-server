@@ -7,6 +7,7 @@ import {
   DailyReportAggregate,
   TransaksiLaporan,
 } from '../reports/reports.service.js';
+import { ActivityLogService } from '../activity-log/activity-log.service.js';
 
 const LABEL_JENIS: Record<string, string> = {
   BELI_BARU: 'Beli Baru',
@@ -51,7 +52,10 @@ export interface KirimHasil {
 export class LaporanService {
   private readonly logger = new Logger(LaporanService.name);
 
-  constructor(private readonly reportsService: ReportsService) {}
+  constructor(
+    private readonly reportsService: ReportsService,
+    private readonly activityLogService: ActivityLogService,
+  ) {}
 
   @Cron('30 23 * * *', { name: 'tutup-hari-laporan', timeZone: 'Asia/Jakarta' })
   async handleTutupHariOtomatis(): Promise<void> {
@@ -63,6 +67,13 @@ export class LaporanService {
       );
     } catch (err) {
       this.logger.error(`Laporan tutup hari GAGAL: ${(err as Error).message}`, (err as Error).stack);
+    } finally {
+      try {
+        const dihapus = await this.activityLogService.resetDayLogs();
+        this.logger.log(`Log aktivitas direset: ${dihapus} baris dihapus`);
+      } catch (err) {
+        this.logger.error(`Reset log aktivitas GAGAL: ${(err as Error).message}`);
+      }
     }
   }
 

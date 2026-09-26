@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
@@ -66,5 +66,43 @@ export class AuthService {
       orderBy: { createdAt: 'desc' },
       select: { id: true, username: true, role: true, createdAt: true },
     });
+  }
+
+  async deleteUser(id: string, currentUserId: string) {
+    if (id === currentUserId) {
+      throw new BadRequestException('Tidak bisa menghapus akun Anda sendiri');
+    }
+
+    const target = await this.prisma.user.findUnique({ where: { id } });
+    if (!target) {
+      throw new NotFoundException('User tidak ditemukan');
+    }
+
+    // Kalau admin terakhir dihapus, tidak ada lagi yang bisa menambah user
+    // sehingga akun jadi buntu permanen.
+    if (target.role === Role.ADMIN) {
+      const jumlahAdmin = await this.prisma.user.count({
+        where: { role: Role.ADMIN },
+      });
+      if (jumlahAdmin <= 1) {
+        throw new BadRequestException(
+          'Tidak bisa menghapus admin terakhir — tidak akan ada yang bisa menambah user lagi',
+        );
+      }
+    }
+
+    // Transaction.kasirId mewajibkan user (delete rule RESTRICT), jadi user
+    // yang sudah pernah dipakai bertransaksi tidak bisa dihapus.
+    const jumlahTransaksi = await this.prisma.transaction.count({
+      where: { kasirId: id },
+    });
+    if (jumlahTransaksi > 0) {
+      throw new ConflictException(
+        `User "${target.username}" punya ${jumlahTransaksi} transaksi — tidak bisa dihapus`,
+      );
+    }
+
+    await this.prisma.user.delete({ where: { id } });
+    return { deleted: target.username };
   }
 }

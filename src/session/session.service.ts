@@ -3,6 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'node:crypto';
 import { AccountStatus, SessionStatus, PcStatus, AccountType, TransactionType, Prisma } from '@prisma/client';
+import { AMBANG_OFFLINE_MS, statusPcEfektif } from '../pc/pc-status.js';
 
 export interface DashboardPcInfo {
   id: string;
@@ -148,12 +149,15 @@ export class SessionService implements OnModuleDestroy {
 
     return pcs.map((pc) => {
       const session = sessionByPc.get(pc.id);
+      // Kolom status di database tidak pernah diubah jadi OFFLINE, jadi status
+      // yang dikirim ke dashboard harus dihitung ulang dari heartbeat terakhir.
+      const status = statusPcEfektif(pc.status, pc.lastHeartbeatAt);
       if (!session) {
         return {
           id: pc.id,
           namaPc: pc.namaPc,
           ipClient: pc.ipClient,
-          status: pc.status,
+          status,
           lastHeartbeatAt: pc.lastHeartbeatAt,
           session: null,
         };
@@ -167,7 +171,7 @@ export class SessionService implements OnModuleDestroy {
         id: pc.id,
         namaPc: pc.namaPc,
         ipClient: pc.ipClient,
-        status: pc.status,
+        status,
         lastHeartbeatAt: pc.lastHeartbeatAt,
         session: {
           id: session.id,
@@ -599,7 +603,36 @@ export class SessionService implements OnModuleDestroy {
   private startDisconnectCheck(): void {
     this.disconnectCheckInterval = setInterval(async () => {
       await this.checkGracePeriodExpired();
+      await this.checkPcOffline();
     }, 10000);
+  }
+
+  /**
+   * Tandai PC yang heartbeat-nya sudah basi sebagai OFFLINE lalu siarkan.
+   *
+   * Ini supaya database tidak menyimpan status yang salah, dan supaya
+   * dashboard berubah tanpa harus menunggu ada sesi yang baru dimulai.
+   * `broadcastPcUpdate` sebelumnya hanya terkirim saat agent register, sesi
+   * mulai, atau sesi berhenti, jadi PC idle yang mati tidak pernah memberi
+   * kabar apa pun sama sekali.
+   */
+  private async checkPcOffline(): Promise<void> {
+    try {
+      const batas = new Date(Date.now() - AMBANG_OFFLINE_MS);
+      const hasil = await this.prisma.pc.updateMany({
+        where: {
+          status: { not: PcStatus.OFFLINE },
+          OR: [{ lastHeartbeatAt: null }, { lastHeartbeatAt: { lt: batas } }],
+        },
+        data: { status: PcStatus.OFFLINE },
+      });
+      if (hasil.count > 0) {
+        this.logger.log(`${hasil.count} PC ditandai OFFLINE karena heartbeat tidak diterima`);
+        this.gatewayEvents?.broadcastPcUpdate();
+      }
+    } catch (e) {
+      this.logger.warn(`Gagal menandai PC offline: ${(e as Error).message}`);
+    }
   }
 
   private async checkGracePeriodExpired(): Promise<void> {

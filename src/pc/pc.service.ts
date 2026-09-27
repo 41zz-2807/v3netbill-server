@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { SessionStatus } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreatePcDto } from './dto/create-pc.dto.js';
+import { statusPcEfektif } from './pc-status.js';
 import { randomUUID } from 'crypto';
 
 @Injectable()
@@ -9,9 +10,16 @@ export class PcService {
   constructor(private prisma: PrismaService) {}
 
   async findAll() {
-    return this.prisma.pc.findMany({
+    const pcs = await this.prisma.pc.findMany({
       orderBy: { namaPc: 'asc' },
     });
+    // Kolom status di database tidak pernah diubah jadi OFFLINE, jadi status
+    // yang dikembalikan harus dihitung ulang dari heartbeat terakhir. Tanpa ini
+    // PC yang dimatikan akan terus terbaca IDLE.
+    return pcs.map((pc) => ({
+      ...pc,
+      status: statusPcEfektif(pc.status, pc.lastHeartbeatAt),
+    }));
   }
 
   async create(createPcDto: CreatePcDto) {

@@ -4,6 +4,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'node:crypto';
 import { AccountStatus, SessionStatus, PcStatus, AccountType, TransactionType, Prisma } from '@prisma/client';
 import { AMBANG_OFFLINE_MS, statusPcEfektif } from '../pc/pc-status.js';
+import { PANJANG_PASSWORD_MIN } from '../accounts/password.js';
 
 export interface DashboardPcInfo {
   id: string;
@@ -569,6 +570,44 @@ export class SessionService implements OnModuleDestroy {
     this.gatewayEvents?.broadcastPcUpdate();
 
     this.logger.log(`Session ${sessionId} stopped: ${alasan}, durasi=${durasiTerpakaiDetik}detik, sisaKembali=${sisaWaktuKembali}detik`);
+  }
+
+  /**
+   * Ganti password sebuah akun dari sisi PC.
+   *
+   * Dipakai tombol "Buat Password" di agent. Password lama tidak ditanyakan
+   * karena semua akun baru memakai password bawaan yang sama, jadi pemilik
+   * yang memakai komputer tidak perlu mengingat apa pun untuk memulai.
+   *
+   * Sengaja tidak ada pengecekan password lama: kalau checked, tombol ini
+   * tidak akan berguna karena password awal sudah diketahui umum.
+   */
+  async setPasswordByKode(
+    kode: string,
+    passwordBaru: string,
+  ): Promise<{ success: boolean; message?: string }> {
+    const baru = passwordBaru?.trim() ?? '';
+    if (baru.length < PANJANG_PASSWORD_MIN) {
+      return { success: false, message: `Password minimal ${PANJANG_PASSWORD_MIN} karakter` };
+    }
+
+    const account = await this.findAccountByKode(kode);
+    if (!account) {
+      return { success: false, message: 'Akun tidak ditemukan' };
+    }
+    if (account.status !== AccountStatus.ACTIVE) {
+      return { success: false, message: 'Akun tidak aktif' };
+    }
+
+    await this.prisma.account.update({
+      where: { id: account.id },
+      data: { passwordHash: await bcrypt.hash(baru, 10) },
+    });
+
+    this.logger.log(
+      `Password diubah untuk akun ${account.kodeUnik ?? account.nama} (${account.tipe})`,
+    );
+    return { success: true };
   }
 
   async handleDisconnect(pcId: string): Promise<void> {

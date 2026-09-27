@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, MinLength, IsInt, Min, IsNumber } from 'class-validator';
+import { IsString, IsNotEmpty, IsInt, Min, IsNumber } from 'class-validator';
 import { Transform } from 'class-transformer';
 
 export class CreateMemberDto {
@@ -6,11 +6,9 @@ export class CreateMemberDto {
   @IsNotEmpty()
   nama: string;
 
-  @IsString()
-  @IsNotEmpty()
-  @MinLength(4)
-  password: string;
-
+  // `password` sengaja tidak ada di sini. Semua member baru mendapat password
+  // bawaan yang sama, dan pelanggan bisa menggantinya sendiri dari layar PC
+  // lewat tombol "Buat Password" di agent.
   @IsNumber()
   @Transform(({ value }) => parseInt(value, 10))
   @IsInt()

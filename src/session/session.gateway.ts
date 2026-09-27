@@ -243,6 +243,45 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
   }
 
+  /**
+   * Ganti password akun dari layar PC.
+   *
+   * Dipakai tombol "Buat Password" di agent. Tidak menanyakan password lama
+   * karena semua akun baru mulai dari password bawaan yang sama, dan orang
+   * yang memakai komputer tidak perlu mengingat apa pun untuk memulai sesi.
+   *
+   * Otorisasi wajib lewat `pcId` + `agentToken` seperti login, jadi
+   * tidak bisa dipanggil tanpa harus jadi agent yang terdaftar.
+   */
+  @SubscribeMessage('client:create_password')
+  async handleClientCreatePassword(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { pcId: string; kode: string; password: string },
+  ): Promise<{ success: boolean; message?: string }> {
+    const { pcId, kode, password } = data ?? {};
+
+    const registeredPcId = this.socketPcMap.get(client.id);
+    if (registeredPcId !== pcId) {
+      const ok = await this.registerAgentFromHandshake(client, pcId);
+      if (!ok) {
+        return { success: false, message: 'PC not registered' };
+      }
+    }
+
+    if (!kode?.trim() || !password?.trim()) {
+      return { success: false, message: 'Kode dan password baru wajib diisi' };
+    }
+
+    const result = await this.sessionService.setPasswordByKode(
+      kode.trim(),
+      password,
+    );
+    this.logger.log(
+      `create_password ${pcId} kode=${kode} → ${result.success ? 'SUKSES' : result.message}`,
+    );
+    return result;
+  }
+
   @SubscribeMessage('client:stop_session')
   async handleStopSession(
     @ConnectedSocket() client: Socket,

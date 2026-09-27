@@ -7,10 +7,10 @@ import { TopupDto } from './dto/topup.dto.js';
 import { KoreksiDto } from './dto/koreksi.dto.js';
 import { BatalTransaksiDto } from './dto/batal-transaksi.dto.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
+import { PASSWORD_DEFAULT } from './password.js';
 import { AccountsQueryDto } from './dto/accounts-query.dto.js';
 import * as bcrypt from 'bcrypt';
 import { AccountType, AccountStatus, TransactionType } from '@prisma/client';
-import * as crypto from 'node:crypto';
 
 @Injectable()
 export class AccountsService {
@@ -27,11 +27,6 @@ export class AccountsService {
 
   private generateKodeUnik(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
-  }
-
-  private generatePassword(): string {
-    // Voucher: 4 digit angka acak (0-9), boleh ada leading zero (contoh "0042").
-    return crypto.randomInt(0, 10000).toString().padStart(4, '0');
   }
 
   private async getHargaPerMenit(): Promise<number> {
@@ -51,7 +46,9 @@ export class AccountsService {
     this.validateNominal(createVoucherDto.nominal);
 
     const sisaWaktuDetik = await this.calculateSisaWaktu(createVoucherDto.nominal);
-    const password = this.generatePassword();
+    // Semua akun baru mulai dari password yang sama, jadi kasir cukup mencatat
+    // kode voucher saja.
+    const password = PASSWORD_DEFAULT;
     const passwordHash = await bcrypt.hash(password, 10);
 
     let kodeUnik: string;
@@ -120,7 +117,7 @@ export class AccountsService {
     }
 
     const sisaWaktuDetik = await this.calculateSisaWaktu(createMemberDto.nominal);
-    const passwordHash = await bcrypt.hash(createMemberDto.password, 10);
+    const passwordHash = await bcrypt.hash(PASSWORD_DEFAULT, 10);
 
     const account = await this.prisma.account.create({
       data: {

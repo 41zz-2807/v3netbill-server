@@ -23,6 +23,9 @@ export interface UploadedFile {
 
 const DATA_DIR = '/data';
 const INSTALLER_DIR = path.join(DATA_DIR, 'installer');
+// APK aplikasi mobile disimpan terpisah dari installer Windows karena
+// keduanya punya nama setting meta yang berbeda.
+const APK_DIR = path.join(DATA_DIR, 'apk');
 const WALLPAPER_DIR = path.join(DATA_DIR, 'wallpaper');
 const BACKUP_DIR = path.join(DATA_DIR, 'backup');
 
@@ -47,7 +50,7 @@ export class SettingsService implements OnApplicationBootstrap {
     private activityLogService: ActivityLogService,
     private sessionGateway: SessionGateway,
   ) {
-    for (const dir of [INSTALLER_DIR, WALLPAPER_DIR, BACKUP_DIR]) {
+    for (const dir of [INSTALLER_DIR, APK_DIR, WALLPAPER_DIR, BACKUP_DIR]) {
       fs.mkdirSync(dir, { recursive: true });
     }
   }
@@ -165,6 +168,46 @@ export class SettingsService implements OnApplicationBootstrap {
     const filePath = path.join(INSTALLER_DIR, meta.filename);
     if (!fs.existsSync(filePath)) {
       throw new NotFoundException('File installer tidak ditemukan');
+    }
+    return filePath;
+  }
+
+  async saveApk(file: UploadedFile): Promise<InstallerMeta> {
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (ext !== '.apk') {
+      throw new BadRequestException('File aplikasi harus berformat .apk');
+    }
+    if (file.size > MAX_INSTALLER_SIZE) {
+      throw new BadRequestException('Ukuran APK maksimal 200MB');
+    }
+
+    const filename = `v3netbill-${Date.now()}.apk`;
+    const filePath = path.join(APK_DIR, filename);
+    fs.writeFileSync(filePath, file.buffer);
+
+    const meta: InstallerMeta = {
+      filename,
+      sizeBytes: file.size,
+      uploadedAt: new Date().toISOString(),
+    };
+    await this.set('apk_meta', JSON.stringify(meta));
+    return meta;
+  }
+
+  async getApkMeta(): Promise<InstallerMeta | null> {
+    const raw = await this.get('apk_meta');
+    if (!raw) return null;
+    try {
+      return JSON.parse(raw) as InstallerMeta;
+    } catch {
+      return null;
+    }
+  }
+
+  getApkFilePath(meta: InstallerMeta): string {
+    const filePath = path.join(APK_DIR, meta.filename);
+    if (!fs.existsSync(filePath)) {
+      throw new NotFoundException('File APK tidak ditemukan');
     }
     return filePath;
   }

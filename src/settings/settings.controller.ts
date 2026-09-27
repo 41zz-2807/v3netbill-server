@@ -32,6 +32,15 @@ const installerFileFilter = (
   cb(allowed ? null : new BadRequestException('Installer harus .exe atau .msi'), allowed);
 };
 
+const apkFileFilter = (
+  _req: Request,
+  file: UploadedFile,
+  cb: (error: Error | null, acceptFile: boolean) => void,
+): void => {
+  const allowed = /\.apk$/i.test(file.originalname);
+  cb(allowed ? null : new BadRequestException('File aplikasi harus .apk'), allowed);
+};
+
 const wallpaperFileFilter = (
   _req: Request,
   file: UploadedFile,
@@ -86,6 +95,33 @@ export class SettingsController {
     }
     const filePath = this.settingsService.getInstallerFilePath(meta);
     res.download(filePath, meta.filename);
+    return;
+  }
+
+  @Post('apk')
+  @Roles(Role.ADMIN)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      fileFilter: apkFileFilter,
+      limits: { fileSize: 200 * 1024 * 1024 },
+    }),
+  )
+  async uploadApk(@UploadedFileDecorator() file: UploadedFile) {
+    if (!file) {
+      throw new BadRequestException('File tidak ditemukan');
+    }
+    const meta = await this.settingsService.saveApk(file);
+    return { success: true, meta };
+  }
+
+  @Get('apk')
+  async getApk(@Res() res: Response) {
+    const meta = await this.settingsService.getApkMeta();
+    if (!meta) {
+      throw new BadRequestException('Belum ada APK terupload');
+    }
+    const filePath = this.settingsService.getApkFilePath(meta);
+    res.download(filePath, 'v3netbill.apk');
     return;
   }
 

@@ -7,6 +7,8 @@ import * as path from 'path';
 import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityLogService } from '../activity-log/activity-log.service.js';
+import { SessionGateway } from '../session/session.gateway.js';
+import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY, OTP_KEYS } from './otp-keys.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -43,6 +45,7 @@ export class SettingsService implements OnApplicationBootstrap {
     private prisma: PrismaService,
     private schedulerRegistry: SchedulerRegistry,
     private activityLogService: ActivityLogService,
+    private sessionGateway: SessionGateway,
   ) {
     for (const dir of [INSTALLER_DIR, WALLPAPER_DIR, BACKUP_DIR]) {
       fs.mkdirSync(dir, { recursive: true });
@@ -83,7 +86,24 @@ export class SettingsService implements OnApplicationBootstrap {
 
   async patchValue(key: string, value: string): Promise<{ key: string; value: string }> {
     await this.set(key, value);
+    if (OTP_KEYS.includes(key)) {
+      await this.pushOtpConfigToAgents();
+    }
     return { key, value };
+  }
+
+  /**
+   * Kirim konfigurasi OTP terbaru ke semua agent aktif. Nilai kosong berarti
+   * menonaktifkan fitur OTP (agent kembali ke PIN emergency bawaan).
+   */
+  async pushOtpConfigToAgents(): Promise<number> {
+    const botToken = (await this.get(OTP_BOT_TOKEN_KEY)) ?? '';
+    const chatId = (await this.get(OTP_CHAT_ID_KEY)) ?? '';
+    const terkirim = this.sessionGateway.pushOtpConfig(botToken, chatId);
+    this.logger.log(
+      `OTP config dipush ke ${terkirim} agent (bot=${botToken ? 'terisi' : 'kosong'}, chatId=${chatId ? 'terisi' : 'kosong'})`,
+    );
+    return terkirim;
   }
 
   async changeOwnPassword(

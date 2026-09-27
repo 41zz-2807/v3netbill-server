@@ -15,6 +15,8 @@ import { JwtService } from '@nestjs/jwt';
 import { Logger, UnauthorizedException } from '@nestjs/common';
 import { Role, AccountType } from '@prisma/client';
 import { ActivityLogService } from '../activity-log/activity-log.service.js';
+import { PrismaService } from '../prisma/prisma.service.js';
+import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY } from '../settings/otp-keys.js';
 
 @WebSocketGateway({
   cors: {
@@ -35,6 +37,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     private sessionService: SessionService,
     private jwtService: JwtService,
     private activityLogService: ActivityLogService,
+    private prisma: PrismaService,
   ) {}
 
   afterInit(server: Server): void {
@@ -104,7 +107,30 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       `PC ${pcId} registered with socket ${client.id}` +
         (ipTerlihat ? ` (ip ${ipTerlihat} via ${this.sumberIp(client)})` : ' (ip tidak terbaca)'),
     );
+
+    // Kirim konfigurasi OTP Telegram ke agent yang baru (re)register supaya
+    // setting yang disimpan saat agent offline ikut tersimpan di disk PC.
+    await this.sendOtpConfigTo(pcId, client.id);
     return true;
+  }
+
+  /** Ambil setting OTP dari DB lalu kirim ke satu socket agent. */
+  private async sendOtpConfigTo(pcId: string, socketId: string): Promise<void> {
+    try {
+      const rows = await this.prisma.setting.findMany({
+        where: { key: { in: [OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY] } },
+      });
+      const map = new Map(rows.map((r) => [r.key, r.value ?? '']));
+      const botToken = map.get(OTP_BOT_TOKEN_KEY) ?? '';
+      const chatId = map.get(OTP_CHAT_ID_KEY) ?? '';
+      if (!botToken && !chatId) return;
+      this.server.to(socketId).emit('agent:otp_config', { botToken, chatId });
+      this.logger.log(`OTP config dikirim ke agent ${pcId} saat register`);
+    } catch (err) {
+      this.logger.warn(
+        `Gagal mengirim OTP config ke ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /** Nama header yang dipakai untuk memperoleh IP — aids diagnosis topologi. */
@@ -268,6 +294,21 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     if (socketId) {
       this.server.to(socketId).emit('session:stop', { alasan });
     }
+  }
+
+  /**
+   * Dorong konfigurasi OTP Telegram ke SEMUA agent yang sedang tersambung.
+   * Dipanggil dari SettingsService saat admin menyimpan bot token / chat id,
+   * supaya agent menyimpannya di disk PC dan tetap bisa kirim OTP saat server mati.
+   */
+  pushOtpConfig(botToken: string, chatId: string): number {
+    let terkirim = 0;
+    for (const [pcId, socketId] of this.pcSocketMap.entries()) {
+      this.server.to(socketId).emit('agent:otp_config', { botToken, chatId });
+      terkirim++;
+      this.logger.log(`OTP config dikirim ke agent ${pcId} (${socketId})`);
+    }
+    return terkirim;
   }
 
   broadcastActivityLog(event: string, payload: Record<string, unknown>): void {

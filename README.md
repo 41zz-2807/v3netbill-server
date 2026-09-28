@@ -82,6 +82,13 @@ Semua di bawah ini perlu JWT kecuali yang ditandai `@Public()`.
 |---|---|---|
 | GET | `/api/transactions` | Riwayat transaksi |
 
+### Auth & User Operator
+| Method | Path | Keterangan |
+|---|---|---|
+| POST | `/api/auth/users` | Tambah user (ADMIN) |
+| GET | `/api/auth/users` | Daftar user (ADMIN) |
+| DELETE | `/api/auth/users/:id` | Hapus user (ADMIN) |
+
 ### Reports
 | Method | Path | Keterangan |
 |---|---|---|
@@ -111,7 +118,10 @@ Semua di bawah ini perlu JWT kecuali yang ditandai `@Public()`.
 | GET | `/api/settings/backup/last` | Info backup terakhir |
 | GET | `/api/settings/backup/list` | Daftar semua backup |
 | GET | `/api/settings/backup/download` | Download file backup |
+| POST | `/api/settings/apk` | Upload APK Android (ADMIN, maks 200 MB) |
+| GET | `/api/settings/apk` | Download APK (`v3netbill.apk`) |
 | PATCH | `/api/settings/pin-uninstall` | Set PIN uninstall (ADMIN) |
+| PATCH | `/api/settings/bypass-pin` | Set PIN bypass/maintenance (ADMIN) |
 | POST | `/api/settings/verify-pin` | Verifikasi PIN (**`@Public()`** — tanpa JWT, pakai `pcId`+`agentToken`) |
 
 ### Activity Log
@@ -130,6 +140,7 @@ Semua di bawah ini perlu JWT kecuali yang ditandai `@Public()`.
 | `agent:register` | agent | `{ pcId, agentToken }` |
 | `agent:heartbeat` | agent | `{ pcId }` |
 | `client:login_request` | overlay | Login dari layar PC → `client:login_result` |
+| `client:create_password` | overlay | Ganti password akun sesi. **Wajib** `passwordLama` |
 | `client:stop_session` | overlay | Stop sesi dari PC |
 | `dashboard:subscribe` | dashboard | Subscribe room `dashboard` |
 | `dashboard:start_pc` | dashboard | Jalankan PC |
@@ -146,6 +157,8 @@ Semua di bawah ini perlu JWT kecuali yang ditandai `@Public()`.
 | `session:stop` | agent | `{ alasan }` |
 | `admin:lock` | agent | `{ pcId }` |
 | `admin:shutdown` | agent | `{ pcId }` |
+| `agent:otp_config` | agent | `{ botToken, chatId }` — dorongan saat register & saat admin simpan |
+| `agent:bypass_config` | agent | `{ hash }` — hash bcrypt PIN bypass, supaya verifikasi bisa lokal |
 | `dashboard:pc_update` | room `dashboard` | `{ pcs: [...] }` — array detail PC + sesi aktif + sisa detik |
 | `dashboard:log` | room `dashboard` | Jejak aktivitas (`session:started`, `session:stopped`, `pc_locked`, `pc_unlocked`, `pc_shutdown`, `transaction:created`) |
 
@@ -176,8 +189,11 @@ Semua di bawah ini perlu JWT kecuali yang ditandai `@Public()`.
 - **Alasan stop & refund:**
   - `habis` → sisa waktu di-reset ke 0 (voucher sekali pakai, tidak bisa dipakai ulang)
   - `manual` / `disconnect_timeout` → refund sisa waktu
-- **Password voucher** = 4 digit angka (`crypto.randomInt(0,10000).padStart(4,'0')`, boleh leading
-  zero). Password manual via `PATCH /accounts/:id/password` bebas formatnya.
+- **Password semua akun baru = `0000`.** Fungsi `generatePassword()` yang dulu membuat
+  4 digit acak **sudah dihapus**; konstantanya `PASSWORD_DEFAULT` di
+  `src/accounts/password.ts`. Berlaku untuk voucher, member, dan voucher yang dibuat
+  dari kartu PC di dashboard. Password manual via `PATCH /accounts/:id/password` bebas
+  formatnya.
 - **Nominal** harus kelipatan 500. Durasi = `floor((nominal / harga_per_menit) * 60)` detik.
 - **IP PC** (`Pc.ipClient`) adalah data **tampilan** saja, diisi otomatis dari koneksi agent.
   Identitas PC selalu `pcId` + `agentToken`. Lihat `docs/DETEKSI-IP.md`.

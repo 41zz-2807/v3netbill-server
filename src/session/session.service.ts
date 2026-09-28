@@ -70,7 +70,19 @@ export class SessionService implements OnModuleDestroy {
     const setting = await this.prisma.setting.findUnique({
       where: { key: 'grace_period_detik' },
     });
-    this.gracePeriodDetik = setting ? parseInt(setting.value, 10) : 180;
+    // Setting bisa kosong atau berisi sampah. parseInt dari nilai itu
+    // menghasilkan NaN, dan NaN * 1000 jadi Invalid Date yang ditolak Prisma.
+    const parsed = setting ? parseInt(setting.value, 10) : NaN;
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      this.gracePeriodDetik = parsed;
+    } else {
+      if (setting) {
+        this.logger.warn(
+          `grace_period_detik tidak valid ("${setting.value}") — pakai default 180 detik`,
+        );
+      }
+      this.gracePeriodDetik = 180;
+    }
   }
 
   async getGracePeriod(): Promise<number> {
@@ -695,20 +707,30 @@ export class SessionService implements OnModuleDestroy {
   }
 
   private async checkGracePeriodExpired(): Promise<void> {
-    const gracePeriod = await this.getGracePeriod();
-    const threshold = new Date(Date.now() - gracePeriod * 1000);
+    // Function ini dipanggil dari setInterval. Tanpa try/catch, satu error
+    // apa pun di dalamnya jadi unhandled rejection yang menjatuhkan SELURUH
+    // proses server, bukan cuma pengiriman جزء dari sesi ini.
+    try {
+      const gracePeriod = await this.getGracePeriod();
+      if (!Number.isFinite(gracePeriod)) {
+        return;
+      }
+      const threshold = new Date(Date.now() - gracePeriod * 1000);
 
-    const sessions = await this.prisma.session.findMany({
-      where: {
-        status: SessionStatus.BERJALAN,
-        disconnectedAt: { not: null, lt: threshold },
-      },
-      include: { account: true, pc: true },
-    });
+      const sessions = await this.prisma.session.findMany({
+        where: {
+          status: SessionStatus.BERJALAN,
+          disconnectedAt: { not: null, lt: threshold },
+        },
+        include: { account: true, pc: true },
+      });
 
-    for (const session of sessions) {
-      this.logger.log(`Grace period expired for session ${session.id}, stopping...`);
-      await this.stopSession(session.id, 'disconnect_timeout');
+      for (const session of sessions) {
+        this.logger.log(`Grace period expired for session ${session.id}, stopping...`);
+        await this.stopSession(session.id, 'disconnect_timeout');
+      }
+    } catch (e) {
+      this.logger.warn(`Gagal mengecek grace period: ${(e as Error).message}`);
     }
   }
 

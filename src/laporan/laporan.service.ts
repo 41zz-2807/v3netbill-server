@@ -2,12 +2,24 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import * as nodemailer from 'nodemailer';
 import PDFDocument from 'pdfkit';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   ReportsService,
   DailyReportAggregate,
   TransaksiLaporan,
 } from '../reports/reports.service.js';
 import { ActivityLogService } from '../activity-log/activity-log.service.js';
+
+/**
+ * Logo untuk header PDF. Disalin dari `frontend/public/logo-v3netbill.png`
+ * ke dalam folder backend supaya ikut ter-mount ke container (mount backend
+ * hanya `backend/` → `/app`), sementara `frontend/public` tidak ter-mount
+ * ke sana.
+ */
+// `__dirname` tidak ada di modul ES (package.json memakai "type": "module"),
+// jadi path dihitung dari folder kerja aplikasi, yaitu /app di container.
+const LOGO_PATH = join(process.cwd(), 'assets', 'logo-v3netbill.png');
 
 const LABEL_JENIS: Record<string, string> = {
   BELI_BARU: 'Beli Baru',
@@ -29,6 +41,16 @@ function fmtWib(d: Date): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    timeZone: 'Asia/Jakarta',
+  }).format(d);
+}
+
+/** Tanggal saja dalam zona WIB, mis. 27/09/2026. */
+function fmtWibTgl(d: Date): string {
+  return new Intl.DateTimeFormat('id-ID', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
     timeZone: 'Asia/Jakarta',
   }).format(d);
 }
@@ -137,16 +159,29 @@ export class LaporanService {
       };
 
       // ===== Header =====
-      doc.font(bold).fontSize(20).fillColor('#0f172a').text('LAPORAN TUTUP HARI', M, 46, {
+      // Logo memakai berkas PNG asli, jadi warna aslinya ikut terjaga. Lebarnya
+      // 150pt: cukup terbaca dari jauh, tapi tidak terlihat lebih besar dari
+      // judul laporan sendiri. Kalau berkasnya hilang, PDF tetap dibuat tanpa
+      // logo daripada gagal total.
+      let headerY = 44;
+      if (existsSync(LOGO_PATH)) {
+        const logoW = 150;
+        const logoH = Math.round((logoW * 144) / 411);
+        doc.image(LOGO_PATH, M + (W - logoW) / 2, headerY, { width: logoW, height: logoH });
+        headerY += logoH + 10;
+      }
+
+      doc.font(bold).fontSize(20).fillColor('#0f172a').text('LAPORAN TUTUP HARI', M, headerY, {
         width: W,
         align: 'center',
       });
+      headerY += 26;
       doc
         .font(reg)
         .fontSize(11)
         .fillColor('#64748b')
-        .text(process.env.SMTP_FROM_NAME ?? 'Warnet', M, 70, { width: W, align: 'center' });
-      doc.y = 90;
+        .text(process.env.SMTP_FROM_NAME ?? 'Warnet', M, headerY, { width: W, align: 'center' });
+      doc.y = headerY + 24;
       doc
         .moveTo(M, doc.y)
         .lineTo(M + W, doc.y)
@@ -172,7 +207,11 @@ export class LaporanService {
       doc.y = infoY + 32;
 
       // ===== Ringkasan (gaya web: kartu MiniStat) =====
-      doc.font(bold).fontSize(13).fillColor('#0f172a').text('Ringkasan');
+      doc
+        .font(bold)
+        .fontSize(13)
+        .fillColor('#0f172a')
+        .text('Ringkasan', M, doc.y, { width: W, align: 'center' });
       doc.moveDown(0.4);
 
       const colGap = 10;
@@ -218,15 +257,21 @@ export class LaporanService {
       doc.font(bold).fontSize(13).fillColor('#0f172a').text('Rincian Transaksi');
       const headerH = 20;
       const rowH = 17;
-      const widths = [26, 96, 158, 80, 82, 73];
-      const rightCols = new Set([4]);
+      // Urutan kolom: No, Tgl, Kasir, Akun, Jenis, Nominal, Waktu. Waktu
+      // dipindah ke kolom paling kanan supaya nilai jam terdorong mentok ke
+      // tepi kanan tabel, sementara tanggal tetap dekat dengan nomor.
+      // Total lebar kolom tetap sama dengan lebar area konten.
+      const widths = [24, 66, 70, 148, 72, 86, 49];
+      // Nominal diratakan ke kanan seperti uangnya; Waktu juga ke kanan supaya
+      // benar-benar menempel tepi tabel.
+      const rightCols = new Set([5, 6]);
 
       const drawHeader = () => {
         const y = doc.y;
         doc.rect(M, y, W + 0.3, headerH).fill('#1e293b');
         doc.font(bold).fontSize(9);
         let x = M;
-        ['No', 'Waktu', 'Akun', 'Jenis', 'Nominal', 'Kasir'].forEach((h, i) => {
+        ['No', 'Tgl', 'Kasir', 'Akun', 'Jenis', 'Nominal', 'Waktu'].forEach((h, i) => {
           const right = rightCols.has(i);
           const disp = fit(h, widths[i] - 12);
           const tw = doc.widthOfString(disp);
@@ -269,10 +314,17 @@ export class LaporanService {
           drawHeader();
         }
         const rowY = doc.y;
-        const wibTgl = `${t.waktu.toISOString().slice(0, 10)} ${fmtWibJam(t.waktu)}`;
         sumNominal += t.nominal;
         drawRow(
-          [String(no++), wibTgl, t.akun, LABEL_JENIS[t.jenis] ?? t.jenis, fmtRp(t.nominal), t.kasir],
+          [
+            String(no++),
+            fmtWibTgl(t.waktu),
+            t.kasir,
+            t.akun,
+            LABEL_JENIS[t.jenis] ?? t.jenis,
+            fmtRp(t.nominal),
+            fmtWibJam(t.waktu),
+          ],
           rowY,
           i,
         );
@@ -288,13 +340,18 @@ export class LaporanService {
       doc.rect(M, totalY, W + 0.3, rowH).fill('#e2e8f0');
       doc.font(bold).fontSize(9);
       const totalRp = fmtRp(sumNominal);
-      const labelBoundary = M + widths[0] + widths[1] + widths[2];
+      // TOTAL diratakan ke tepi kanan kolom Jenis, dan angkanya ke tepi kanan
+      // kolom Nominal, jadi keduanya benar-benar sejajar dengan judulnya.
+      const xJenis = M + widths[0] + widths[1] + widths[2] + widths[3];
+      const xNominal = xJenis + widths[4];
       const totalLabelW = doc.widthOfString('TOTAL');
       doc
         .fillColor('#0f172a')
-        .text('TOTAL', labelBoundary - totalLabelW - 6, totalY + 4, { width: totalLabelW });
+        .text('TOTAL', xJenis + widths[4] - 8 - totalLabelW, totalY + 4, {
+          width: totalLabelW,
+        });
       const totalRpW = doc.widthOfString(totalRp);
-      doc.text(totalRp, M + W - 8 - totalRpW, totalY + 4, {
+      doc.text(totalRp, xNominal + widths[5] - 8 - totalRpW, totalY + 4, {
         width: totalRpW,
       });
       doc.y = totalY + rowH;

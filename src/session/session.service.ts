@@ -4,7 +4,7 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'node:crypto';
 import { AccountStatus, SessionStatus, PcStatus, AccountType, TransactionType, Prisma } from '@prisma/client';
 import { AMBANG_OFFLINE_MS, statusPcEfektif } from '../pc/pc-status.js';
-import { PANJANG_PASSWORD_MIN } from '../accounts/password.js';
+import { PANJANG_PASSWORD_MIN, PASSWORD_DEFAULT } from '../accounts/password.js';
 
 export interface DashboardPcInfo {
   id: string;
@@ -350,7 +350,9 @@ export class SessionService implements OnModuleDestroy {
 
     const hargaPerMenit = await this.getHargaPerMenit();
     const sisaWaktuDetik = Math.floor((nominal / hargaPerMenit) * 60);
-    const password = Math.floor(1000 + Math.random() * 9000).toString();
+    // Sama seperti pembuatan lewat halaman akun: password bawaan, bukan acak,
+    // supaya kasir cukup mencatat kode voucher saja.
+    const password = PASSWORD_DEFAULT;
     const passwordHash = await bcrypt.hash(password, 10);
 
     let kodeUnik = '';
@@ -575,20 +577,29 @@ export class SessionService implements OnModuleDestroy {
   /**
    * Ganti password sebuah akun dari sisi PC.
    *
-   * Dipakai tombol "Buat Password" di agent. Password lama tidak ditanyakan
-   * karena semua akun baru memakai password bawaan yang sama, jadi pemilik
-   * yang memakai komputer tidak perlu mengingat apa pun untuk memulai.
+   * Dipakai tombol "Ganti Password" di mini window agent. Password lama WAJIB
+   * dicocokkan dulu: tombol ini baru muncul setelah sesi berjalan, jadi orang
+   * yang sedang memakai komputer itu memang pemilik akunnya.
    *
-   * Sengaja tidak ada pengecekan password lama: kalau checked, tombol ini
-   * tidak akan berguna karena password awal sudah diketahui umum.
+   * Password bawaan semua akun adalah `0000`, dan field password lama di
+   * dialog diberi petunjuk nilai itu selama belum pernah diganti.
    */
   async setPasswordByKode(
     kode: string,
+    passwordLama: string,
     passwordBaru: string,
   ): Promise<{ success: boolean; message?: string }> {
+    const lama = passwordLama ?? '';
     const baru = passwordBaru?.trim() ?? '';
+
     if (baru.length < PANJANG_PASSWORD_MIN) {
-      return { success: false, message: `Password minimal ${PANJANG_PASSWORD_MIN} karakter` };
+      return {
+        success: false,
+        message: `Password baru minimal ${PANJANG_PASSWORD_MIN} karakter`,
+      };
+    }
+    if (baru === lama) {
+      return { success: false, message: 'Password baru harus berbeda dari yang lama' };
     }
 
     const account = await this.findAccountByKode(kode);
@@ -597,6 +608,15 @@ export class SessionService implements OnModuleDestroy {
     }
     if (account.status !== AccountStatus.ACTIVE) {
       return { success: false, message: 'Akun tidak aktif' };
+    }
+
+    // findAccountByKode hanya mengembalikan kolom ringkas, jadi hash diambil
+    // ulang di sini untuk dicocokkan.
+    const lengkap = await this.prisma.account.findUnique({
+      where: { id: account.id },
+    });
+    if (!lengkap || !(await bcrypt.compare(lama, lengkap.passwordHash))) {
+      return { success: false, message: 'Password lama salah' };
     }
 
     await this.prisma.account.update({

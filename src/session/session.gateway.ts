@@ -256,9 +256,9 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   @SubscribeMessage('client:create_password')
   async handleClientCreatePassword(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { pcId: string; kode: string; password: string },
+    @MessageBody() data: { pcId: string; kode: string; passwordLama: string; password: string },
   ): Promise<{ success: boolean; message?: string }> {
-    const { pcId, kode, password } = data ?? {};
+    const { pcId, kode, passwordLama, password } = data ?? {};
 
     const registeredPcId = this.socketPcMap.get(client.id);
     if (registeredPcId !== pcId) {
@@ -268,12 +268,13 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       }
     }
 
-    if (!kode?.trim() || !password?.trim()) {
-      return { success: false, message: 'Kode dan password baru wajib diisi' };
+    if (!kode?.trim() || !password?.trim() || !passwordLama) {
+      return { success: false, message: 'Kode, password lama, dan password baru wajib diisi' };
     }
 
     const result = await this.sessionService.setPasswordByKode(
       kode.trim(),
+      passwordLama,
       password,
     );
     this.logger.log(

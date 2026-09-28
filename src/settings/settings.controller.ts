@@ -18,9 +18,11 @@ import type { UploadedFile } from './settings.service.js';
 import { PatchSettingDto } from './dto/patch-setting.dto.js';
 import { ChangePasswordDto } from './dto/change-password.dto.js';
 import { PinUninstallDto } from './dto/pin-uninstall.dto.js';
+import { PinBypassDto } from './dto/pin-bypass.dto.js';
 import { VerifyPinDto } from './dto/verify-pin.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
+import { SessionGateway } from '../session/session.gateway.js';
 import { Role } from '@prisma/client';
 
 const installerFileFilter = (
@@ -52,7 +54,10 @@ const wallpaperFileFilter = (
 
 @Controller('settings')
 export class SettingsController {
-  constructor(private readonly settingsService: SettingsService) {}
+  constructor(
+    private readonly settingsService: SettingsService,
+    private readonly sessionGateway: SessionGateway,
+  ) {}
 
   @Get()
   async getAll() {
@@ -188,6 +193,19 @@ export class SettingsController {
   @Roles(Role.ADMIN)
   async setPinUninstall(@Body() body: PinUninstallDto) {
     return this.settingsService.setPinUninstall(body.pin);
+  }
+
+  /**
+   * Simpan PIN bypass/maintenance yang dipakai client di layar login. Setelah
+   * tersimpan, hash-nya langsung didorong ke semua agent yang sedang terhubung
+   * supaya tidak perlu tunggu reconnect.
+   */
+  @Patch('bypass-pin')
+  @Roles(Role.ADMIN)
+  async setBypassPin(@Body() body: PinBypassDto) {
+    const hasil = await this.settingsService.setPinBypass(body.pin);
+    const terkirim = await this.sessionGateway.pushBypassConfig();
+    return { ...hasil, terkirim };
   }
 
   @Public()

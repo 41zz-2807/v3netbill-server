@@ -17,6 +17,7 @@ import { Role, AccountType } from '@prisma/client';
 import { ActivityLogService } from '../activity-log/activity-log.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY } from '../settings/otp-keys.js';
+import { BYPASS_PIN_HASH_KEY } from '../settings/bypass-keys.js';
 
 @WebSocketGateway({
   cors: {
@@ -111,7 +112,59 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     // Kirim konfigurasi OTP Telegram ke agent yang baru (re)register supaya
     // setting yang disimpan saat agent offline ikut tersimpan di disk PC.
     await this.sendOtpConfigTo(pcId, client.id);
+    await this.sendBypassConfigTo(pcId, client.id);
     return true;
+  }
+
+  /**
+   * Ambil hash PIN bypass dari DB lalu kirim ke satu socket agent. Yang dikirim
+   * hanya hash-nya supaya client bisa verifikasi lokal, tetap jalan saat server
+   * mati. Hash kosong berarti client pakai PIN emergency bawaan.
+   */
+  private async sendBypassConfigTo(pcId: string, socketId: string): Promise<void> {
+    try {
+      const row = await this.prisma.setting.findUnique({
+        where: { key: BYPASS_PIN_HASH_KEY },
+      });
+      const hash = row?.value ?? '';
+      if (!hash) return;
+      this.server.to(socketId).emit('agent:bypass_config', { hash });
+      this.logger.log(`PIN bypass config dikirim ke agent ${pcId} saat register`);
+    } catch (err) {
+      this.logger.warn(
+        `Gagal mengirim PIN bypass config ke ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Dorong hash PIN bypass ke SEMUA agent yang tersambung. Dipanggil dari
+   * SettingsController setelah admin menyimpan PIN, supaya tidak perlu tunggu
+   * agent reconnect.
+   */
+  async pushBypassConfig(): Promise<number> {
+    if (this.pcSocketMap.size === 0) return 0;
+    let terkirim = 0;
+    let hash = '';
+    try {
+      const row = await this.prisma.setting.findUnique({
+        where: { key: BYPASS_PIN_HASH_KEY },
+      });
+      hash = row?.value ?? '';
+    } catch (err) {
+      this.logger.warn(
+        `Gagal baca hash PIN bypass: ${err instanceof Error ? err.message : String(err)}`,
+      );
+      return 0;
+    }
+    for (const [pcId, socketId] of this.pcSocketMap.entries()) {
+      this.server.to(socketId).emit('agent:bypass_config', { hash });
+      terkirim++;
+    }
+    this.logger.log(
+      `PIN bypass config dikirim ke ${terkirim} agent (${hash ? 'hash baru' : 'dikosongkan'})`,
+    );
+    return terkirim;
   }
 
   /** Ambil setting OTP dari DB lalu kirim ke satu socket agent. */

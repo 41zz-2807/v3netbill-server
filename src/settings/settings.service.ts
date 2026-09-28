@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import { ActivityLogService } from '../activity-log/activity-log.service.js';
 import { SessionGateway } from '../session/session.gateway.js';
 import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY, OTP_KEYS } from './otp-keys.js';
+import { BYPASS_PIN_HASH_KEY } from './bypass-keys.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -301,6 +302,28 @@ export class SettingsService implements OnApplicationBootstrap {
     const hash = await bcrypt.hash(pin, 10);
     await this.set('pin_uninstall_hash', hash);
     return { success: true };
+  }
+
+  /**
+   * Simpan PIN bypass/maintenance dari Pengaturan. PIN ini dipakai client saat
+   * service dimatikan dari layar login, jadi harus diverifikasi LOKAL di PC
+   * (bisa tanpa server). Karena itu yang dikirim ke client adalah hash-nya.
+   *
+   * PIN dikosongkan = hapus hash, client kembali ke PIN emergency bawaan.
+   */
+  async setPinBypass(pin: string): Promise<{ success: boolean; kosong: boolean }> {
+    const bersih = pin?.trim() ?? '';
+    if (bersih.length === 0) {
+      await this.set(BYPASS_PIN_HASH_KEY, '');
+      return { success: true, kosong: true };
+    }
+    const hash = await bcrypt.hash(bersih, 10);
+    await this.set(BYPASS_PIN_HASH_KEY, hash);
+    return { success: true, kosong: false };
+  }
+
+  async getPinBypassHash(): Promise<string> {
+    return (await this.get(BYPASS_PIN_HASH_KEY)) ?? '';
   }
 
   async verifyPinUninstall(

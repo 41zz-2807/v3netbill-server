@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { SessionGateway } from '../session/session.gateway.js';
+import { SessionService } from '../session/session.service.js';
 import { CreateVoucherDto } from './dto/create-voucher.dto.js';
 import { CreateMemberDto } from './dto/create-member.dto.js';
 import { TopupDto } from './dto/topup.dto.js';
@@ -17,6 +18,7 @@ export class AccountsService {
   constructor(
     private prisma: PrismaService,
     private sessionGateway: SessionGateway,
+    private sessionService: SessionService,
   ) {}
 
   private validateNominal(nominal: number): void {
@@ -346,10 +348,30 @@ export class AccountsService {
       throw new NotFoundException('Account not found');
     }
 
-    return this.prisma.account.update({
+    const hasil = await this.prisma.account.update({
       where: { id },
       data: { status: AccountStatus.REVOKED },
     });
+
+    // Sesi yang SEDANG berjalan ikut dihentikan.
+    //
+    // Tanpa ini, operator menonaktifkan member lalu member itu masih
+    // jalan di komputer sampai waktunya habis. Menolak akun yang bukan ACTIVE
+    // hanya melindungi sesi BARU; sesi yang sudah jalan tidak pernah dicek
+    // ulang statusnya.
+    //
+    // Pengaman kedua ada di tick sesi, tapi pemicunya di sini supaya PC
+    // terkunci seketika, bukan satu detik kemudian.
+    const dihentikan = await this.sessionService.stopSessionsOfAccount(id);
+    if (dihentikan > 0) {
+      this.sessionGateway.broadcastActivityLog('account:revoked', {
+        accountId: id,
+        kode: account.kodeUnik,
+        sesiDihentikan: dihentikan,
+      });
+    }
+
+    return hasil;
   }
 
   async findAll(query: AccountsQueryDto) {

@@ -23,6 +23,23 @@ export interface DashboardPcInfo {
   } | null;
 }
 
+/**
+ * Alasan sesi dihentikan.
+ *
+ * `akun_nonaktif` ditambahkan 30 Sep. Alasannya bukan string di database —
+ * Session tidak punya kolom alasan, jadi nilainya hanya ikut di payload
+ * ActivityLog. Karena itu menambah nilai baru TIDAK butuh migrasi.
+ *
+ * Nilainya tetap dibatasi 'manual' | 'habis' | 'disconnect_timeout' |
+ * 'akun_nonaktif' supaya alasan yang tidak dikenal tidak bisa diam-diam
+ * masuk ke log.
+ */
+export type AlasanStop =
+  | 'manual'
+  | 'habis'
+  | 'disconnect_timeout'
+  | 'akun_nonaktif';
+
 export interface SessionGatewayEvents {
   emitSessionStart(
     pcId: string,
@@ -31,7 +48,7 @@ export interface SessionGatewayEvents {
     account: { kodeUnik: string | null; nama: string | null; tipe: AccountType },
   ): void;
   emitSessionTick(pcId: string, sisaDetik: number): void;
-  emitSessionStop(pcId: string, alasan: 'manual' | 'habis' | 'disconnect_timeout'): void;
+  emitSessionStop(pcId: string, alasan: AlasanStop): void;
   broadcastPcUpdate(): Promise<void>;
   broadcastActivityLog(event: string, payload: Record<string, unknown>): void;
   /** Catat masalah pada tick sesi tanpa pernah melempar. */
@@ -219,13 +236,9 @@ export class SessionService implements OnModuleDestroy {
         (await this.prisma.account.findUnique({
           where: { kodeUnik: kode },
         })) ??
-        (await this.prisma.account.findFirst({
-          where: { nama: kode },
-        }));
+        (await this.cariAkunAktif({ nama: kode }));
     } else if (credential.nama) {
-      account = await this.prisma.account.findFirst({
-        where: { nama: credential.nama },
-      });
+      account = await this.cariAkunAktif({ nama: credential.nama });
     }
 
     if (!account) {
@@ -419,10 +432,32 @@ export class SessionService implements OnModuleDestroy {
     };
   }
 
+  /**
+   * Cari akun yang masih aktif, dan HANYA setelah itu fallback ke akun nonaktif.
+   *
+   * Prioritaskan yang ACTIVE karena `createMember` SENGAJA mengizinkan nama
+   * yang sama kalau yang lama sudah dinonaktifkan (lihat accounts.service.ts).
+   * Tanpa filter status di sini, akun lama yang sudah REVOKED bisa menutupi
+   * yang baru, dan member yang barusan dibuat akan SELALU ditolak dengan
+   * "Akun tidak aktif" — padahal dia tidak mungkin sekali pun bisa login.
+   *
+   * Fallback ke akun nonaktif tetap dijaga supaya pesannya informatif:
+   * "Akun tidak aktif" jauh lebih berguna daripada "Akun tidak ditemukan",
+   * karena operator bisa langsung tahu itu akun yang dinonaktifkan, bukan
+   * salah ketik.
+   */
+  private async cariAkunAktif(where: { nama: string }) {
+    return (
+      (await this.prisma.account.findFirst({
+        where: { ...where, status: AccountStatus.ACTIVE },
+      })) ?? (await this.prisma.account.findFirst({ where }))
+    );
+  }
+
   private async findAccountByKode(kode: string) {
     return (
       (await this.prisma.account.findUnique({ where: { kodeUnik: kode } })) ??
-      (await this.prisma.account.findFirst({ where: { nama: kode } }))
+      (await this.cariAkunAktif({ nama: kode }))
     );
   }
 
@@ -518,6 +553,23 @@ export class SessionService implements OnModuleDestroy {
           return;
         }
 
+        // Akun yang dinonaktifkan (revoke) TIDAK BOLEH lanjut berjalan.
+        //
+        // `loginRequest` menolak akun yang bukan ACTIVE, jadi sesi baru sudah
+        // aman. Tapi sesi yang SEDANG berjalan tidak pernah dicek ulang status
+        // akunnya: operator menonaktifkan member, dan member itu tetap jalan
+        // sampai waktunya habis. Itu celah logika bisnis, bukan sekadar
+        // tampilan.
+        //
+        // Dicek di sini sebagai pengaman. Jalur normally udahan revoke()
+        // yang menghentikan sesi seketika, jadi kasus ini hanya terjadi kalau
+        // status berubah lewat jalur lain (mis. ubahan langsung di database).
+        if (session.account.status !== AccountStatus.ACTIVE) {
+          await this.stopSession(sessionId, 'akun_nonaktif');
+          berhenti();
+          return;
+        }
+
         const elapsedDetik = Math.max(0, Math.floor((Date.now() - session.waktuMulai.getTime()) / 1000));
         const sisaDetik = Math.max(0, session.account.sisaWaktuDetik - elapsedDetik);
 
@@ -556,7 +608,7 @@ export class SessionService implements OnModuleDestroy {
     this.sessionIntervals.set(sessionId, interval);
   }
 
-  async stopSession(sessionId: string, alasan: 'manual' | 'habis' | 'disconnect_timeout'): Promise<void> {
+  async stopSession(sessionId: string, alasan: AlasanStop): Promise<void> {
     const session = await this.prisma.session.findUnique({
       where: { id: sessionId },
       include: { account: true, pc: true },
@@ -617,6 +669,45 @@ export class SessionService implements OnModuleDestroy {
     this.gatewayEvents?.broadcastPcUpdate();
 
     this.logger.log(`Session ${sessionId} stopped: ${alasan}, durasi=${durasiTerpakaiDetik}detik, sisaKembali=${sisaWaktuKembali}detik`);
+  }
+
+  /**
+   * Hentikan semua sesi yang sedang berjalan milik sebuah akun.
+   *
+   * Dipakai saat akun dinonaktifkan, supaya PC-nya terkunci SEKETIKA dan bukan
+   * menunggu giliran tick. Tick punya pemeriksaan status sebagai pengaman,
+   * tapi menunggu satu detik terasa lama kalau operator sedang memperhatikan
+   * layarnya.
+   *
+   * Sisa waktu dikembalikan seperti pada penghentian manual: akunnya
+   * dinonaktifkan, bukan dibuang, jadi sisa yang sudah dibayar tidak boleh
+   * hilang. Kalau ternyata tidak ada sesi berjalan, hasilnya nol dan tidak ada
+   * efek samping.
+   */
+  async stopSessionsOfAccount(accountId: string): Promise<number> {
+    const sessions = await this.prisma.session.findMany({
+      where: { accountId, status: SessionStatus.BERJALAN },
+      select: { id: true },
+    });
+
+    for (const s of sessions) {
+      try {
+        await this.stopSession(s.id, 'akun_nonaktif');
+      } catch (e) {
+        // Satu sesi gagal tidak boleh membuat sisa sesi lain terus berjalan.
+        // Sengaja ditelan: `stopSession` sudah mengembalikan void dan kegagalannya
+        // tercatat di log internalnya.
+        const pesan = e instanceof Error ? e.message : String(e);
+        this.gatewayEvents?.logTickError(`henti sesi ${s.id}: ${pesan}`);
+      }
+    }
+
+    if (sessions.length > 0) {
+      this.logger.log(
+        `${sessions.length} sesi dihentikan karena akun dinonaktifkan`,
+      );
+    }
+    return sessions.length;
   }
 
   /**

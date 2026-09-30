@@ -14,6 +14,7 @@ import { ReportsModule } from './reports/reports.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { LaporanModule } from './laporan/laporan.module.js';
 import { ActivityLogModule } from './activity-log/activity-log.module.js';
+import { NotifikasiModule } from './notifikasi/notifikasi.module.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
@@ -34,6 +35,7 @@ import { RolesGuard } from './common/guards/roles.guard.js';
     SettingsModule,
     LaporanModule,
     ActivityLogModule,
+    NotifikasiModule,
   ],
   controllers: [AppController],
   providers: [

@@ -48,6 +48,25 @@ model User {
   role          Role
   createdAt     DateTime @default(now())
   transactions  Transaction[]
+  devices       Perangkat[]
+}
+
+/// Token perangkat untuk notifikasi push (FCM).
+///
+/// Token diikat ke user, bukan ke satu perangkat fisik: begitu akun dihapus,
+/// semua token-nya ikut terhapus. `onDelete: Cascade` itu wajib ditulis
+/// eksplisit karena seluruh skema ini tidak memakai `onDelete` sama sekali,
+/// jadi default-nya RESTRICT dan penghapusan user akan ditolak PostgreSQL.
+model Perangkat {
+  id         String   @id @default(uuid())
+  token      String   @unique
+  platform   String   @default("android")
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+  lastSeenAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model Pc {

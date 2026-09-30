@@ -10,6 +10,11 @@ import { ActivityLogService } from '../activity-log/activity-log.service.js';
 import { SessionGateway } from '../session/session.gateway.js';
 import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY, OTP_KEYS } from './otp-keys.js';
 import { BYPASS_PIN_HASH_KEY } from './bypass-keys.js';
+import { createHash } from 'crypto';
+// Paket CJS tanpa tipe. Default import, bukan `import = require()`, karena
+// project ini ESM (`"type": "module"` + module nodenext) dan import-equals
+// ditolak TypeScript di sana.
+import AppInfoParser from 'app-info-parser';
 
 const execFileAsync = promisify(execFile);
 
@@ -39,6 +44,28 @@ export interface InstallerMeta {
   filename: string;
   sizeBytes: number;
   uploadedAt: string;
+}
+
+/**
+ * Metadata APK aplikasi mobile.
+ *
+ * `versionCode` dan `versionName` dibaca langsung dari dalam berkas APK saat
+ * upload, bukan diketik orang. Ini yang membuat aplikasi Android bisa mendeteksi
+ * pembaruan: ia membandingkan `versionCode` miliknya sendiri dengan angka di
+ * sini. Tanpa itu, tidak ada satu pun angka yang bisa dibandingkan.
+ *
+ * `sha256` dihitung dari berkas. Aplikasi memverifikasi ulang setelah unduhan
+ * selesai, jadi berkas yang terpotong di tengah jalan tidak akan pernah
+ * diserahkan ke installer Android.
+ *
+ * Ketiganya boleh `null` kalau APK tidak bisa diurai. Unggahan tetap dianggap
+ * berhasil dalam kasus itu — lebih baik ada APK-nya daripada tidak sama sekali
+ * — tapi aplikasi akan menampilkan "versi tidak diketahui", bukan menebak.
+ */
+export interface ApkMeta extends InstallerMeta {
+  versionCode: number | null;
+  versionName: string | null;
+  sha256: string | null;
 }
 
 @Injectable()
@@ -173,7 +200,7 @@ export class SettingsService implements OnApplicationBootstrap {
     return filePath;
   }
 
-  async saveApk(file: UploadedFile): Promise<InstallerMeta> {
+  async saveApk(file: UploadedFile): Promise<ApkMeta> {
     const ext = path.extname(file.originalname).toLowerCase();
     if (ext !== '.apk') {
       throw new BadRequestException('File aplikasi harus berformat .apk');
@@ -186,20 +213,68 @@ export class SettingsService implements OnApplicationBootstrap {
     const filePath = path.join(APK_DIR, filename);
     fs.writeFileSync(filePath, file.buffer);
 
-    const meta: InstallerMeta = {
+    // Baca versi dari berkas, bukan dari nama berkas dan bukan dari input
+    // orang. Kalau ini gagal, JANGAN gagalkan unggahan: APK-nya tetap berguna
+    // untuk diunduh manual, dan aplikasi hanya akan menampilkan "versi tidak
+    // diketahui". Kegagalan yang menggagalkan seluruh upload jauh lebih buruk.
+    const { versionCode, versionName } = await this.bacaVersiApk(filePath);
+
+    const meta: ApkMeta = {
       filename,
       sizeBytes: file.size,
       uploadedAt: new Date().toISOString(),
+      versionCode,
+      versionName,
+      sha256: this.hitungSha256(filePath),
     };
     await this.set('apk_meta', JSON.stringify(meta));
     return meta;
   }
 
-  async getApkMeta(): Promise<InstallerMeta | null> {
+  /**
+   * Baca versionCode / versionName dari dalam APK.
+   *
+   * Semua error ditelan dan hasilnya `null`, lihat catatan di `ApkMeta`.
+   */
+  private async bacaVersiApk(
+    filePath: string,
+  ): Promise<{ versionCode: number | null; versionName: string | null }> {
+    try {
+      const info = await new AppInfoParser(filePath).parse();
+      const raw = info.versionCode;
+      // Paket ini bisa mengembalikan string, jadi jangan berasumsi number.
+      const versionCode =
+        raw === undefined || raw === null || raw === '' ? null : Number(raw);
+      return {
+        versionCode: Number.isFinite(versionCode) ? versionCode : null,
+        versionName: typeof info.versionName === 'string' ? info.versionName : null,
+      };
+    } catch (err) {
+      this.logger.warn(
+        `Gagal membaca versi APK: ${(err as Error).message}. Unggahan tetap diteruskan tanpa nomor versi.`,
+      );
+      return { versionCode: null, versionName: null };
+    }
+  }
+
+  private hitungSha256(filePath: string): string | null {
+    try {
+      return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
+    } catch (err) {
+      this.logger.warn(
+        `Gagal menghitung sha256 APK: ${(err as Error).message}`,
+      );
+      return null;
+    }
+  }
+
+  async getApkMeta(): Promise<ApkMeta | null> {
     const raw = await this.get('apk_meta');
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as InstallerMeta;
+      // APK yang terupload sebelum versi ini tidak punya field versi, jadi
+      // jangan menganggap `versionCode` selalu ada.
+      return JSON.parse(raw) as ApkMeta;
     } catch {
       return null;
     }

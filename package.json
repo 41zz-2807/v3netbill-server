@@ -35,6 +35,7 @@
     "@nestjs/serve-static": "^12.0.0",
     "@nestjs/websockets": "^12.0.4",
     "@prisma/client": "^5.22.0",
+    "app-info-parser": "^1.1.6",
     "bcrypt": "^6.0.0",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",

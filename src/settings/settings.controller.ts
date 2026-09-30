@@ -130,6 +130,34 @@ export class SettingsController {
     return;
   }
 
+  /**
+   * Metadata APK saja, tanpa berkas.
+   *
+   * Endpoint ini yang dipakai aplikasi Android untuk cek pembaruan. Sengaja
+   * dipisah dari `GET /apk` yang isinya 54 MB — aplikasi hanya perlu
+   * beberapa angka, bukan berkasnya.
+   *
+   * Wajib JWT. Yang bisa mengunggah APK adalah admin, dan admin juga bisa
+   * memasang apa pun di setiap HP kasir. Membuat endpoint ini publik berarti
+   * memberi daftar nomornya sendiri ke penyerang.
+   *
+   * ⚠️ JANGAN ganti ini dengan `GET /settings`. Endpoint itu mengembalikan
+   * SELURUH setting termasuk `agent_otp_bot_token` (token bot Telegram yang
+   * aktif) dan hash PIN. Aplikasi cukup butuh empat angka di bawah.
+   */
+  @Get('apk/info')
+  async getApkInfo() {
+    const meta = await this.settingsService.getApkMeta();
+    return {
+      ada: meta !== null,
+      versionCode: meta?.versionCode ?? null,
+      versionName: meta?.versionName ?? null,
+      ukuranBytes: meta?.sizeBytes ?? null,
+      sha256: meta?.sha256 ?? null,
+      tanggalUpload: meta?.uploadedAt ?? null,
+    };
+  }
+
   @Post('wallpaper')
   @Roles(Role.ADMIN)
   @UseInterceptors(

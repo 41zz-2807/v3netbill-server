@@ -15,6 +15,7 @@ import { JwtService } from '@nestjs/jwt';
 import { Logger, UnauthorizedException } from '@nestjs/common';
 import { Role, AccountType } from '@prisma/client';
 import { ActivityLogService } from '../activity-log/activity-log.service.js';
+import { NotifikasiService } from '../notifikasi/notifikasi.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY } from '../settings/otp-keys.js';
 import { BYPASS_PIN_HASH_KEY } from '../settings/bypass-keys.js';
@@ -39,6 +40,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     private jwtService: JwtService,
     private activityLogService: ActivityLogService,
     private prisma: PrismaService,
+    private notifikasiService: NotifikasiService,
   ) {}
 
   afterInit(server: Server): void {
@@ -291,8 +293,38 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
         result.account!,
       );
       await this.broadcastPcUpdate();
+      await this.kabarPemakaiNotifikasi(pcId, result.account!.tipe);
     } else {
       client.emit('client:login_result', { success: false, message: result.message });
+    }
+  }
+
+  /**
+   * Kabari perangkat admin lewat FCM bahwa ada pelanggan yang mulai sesi.
+   *
+   * Dibungkus try/catch sendiri dan TIDAK menggagalkan login. Jalur ini sedang
+   * dipakai pelanggan yang sedang mengetik kode di komputer, jadi satu masalah
+   * notifikasi tidak boleh pernah membuat sesinya gagal start.
+   *
+   * Nama PC diambil dari database, bukan `pcId`, karena yang tampil di
+   * notifikasi adalah "PC-01", bukan UUID.
+   */
+  private async kabarPemakaiNotifikasi(
+    pcId: string,
+    tipe: AccountType,
+  ): Promise<void> {
+    try {
+      const pc = await this.prisma.pc.findUnique({
+        where: { id: pcId },
+        select: { namaPc: true },
+      });
+      await this.notifikasiService.kirimSesiMulai({
+        namaPc: pc?.namaPc ?? 'PC',
+        tipe,
+      });
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      this.logger.warn(`Notifikasi sesi gagal dikirim: ${pesan}`);
     }
   }
 
@@ -425,11 +457,24 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   }
 
   async broadcastPcUpdate(): Promise<void> {
-    const data = await this.sessionService.getDashboardData();
-    this.server.to('dashboard').emit('dashboard:pc_update', {
-      pcs: data,
-      at: new Date().toISOString(),
-    });
+    // Aman dari penolakan. Method ini dipanggil TANPA await dari beberapa
+    // tempat (termasuk dari tick sesi), jadi penolakan di sini akan jadi
+    // unhandled rejection. Itu pernah mematikan seluruh proses Node.
+    try {
+      const data = await this.sessionService.getDashboardData();
+      this.server.to('dashboard').emit('dashboard:pc_update', {
+        pcs: data,
+        at: new Date().toISOString(),
+      });
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      this.logger.warn(`broadcastPcUpdate gagal: ${pesan}`);
+    }
+  }
+
+  /** Dipakai tick sesi untuk mencatat masalah tanpa risiko melempar. */
+  logTickError(pesan: string): void {
+    this.logger.warn(pesan);
   }
 
   @SubscribeMessage('dashboard:subscribe')

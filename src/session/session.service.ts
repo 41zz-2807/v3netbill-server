@@ -34,6 +34,8 @@ export interface SessionGatewayEvents {
   emitSessionStop(pcId: string, alasan: 'manual' | 'habis' | 'disconnect_timeout'): void;
   broadcastPcUpdate(): Promise<void>;
   broadcastActivityLog(event: string, payload: Record<string, unknown>): void;
+  /** Catat masalah pada tick sesi tanpa pernah melempar. */
+  logTickError(pesan: string): void;
 }
 
 @Injectable()
@@ -489,34 +491,65 @@ export class SessionService implements OnModuleDestroy {
       return;
     }
 
+    const berhenti = () => {
+      clearInterval(interval);
+      this.sessionIntervals.delete(sessionId);
+    };
+
     const interval = setInterval(async () => {
-      const session = await this.prisma.session.findUnique({
-        where: { id: sessionId },
-        include: { account: true, pc: true },
-      });
+      // ⚠️ WAJIB. Callback ini async dan dipanggil dari setInterval, jadi
+      // penolakan apa pun yang lolos dari sini menjadi unhandled rejection dan
+      // MEMATIKAN seluruh proses Node — bukan hanya satu sesi. Semua PC
+      // kehilangan billing seketika.
+      //
+      // Ini bukan teori. Terjadi 30 Sep: `bersihkan-data` (dan skrip uji)
+      // menghapus baris `Session` sementara tick-nya masih berjalan. Tick
+      // berikutnya memanggil `session.update()` untuk baris yang sudah tidak
+      // ada, Prisma melempar P2025, dan proses mati. Ekor lognya panjang sekali
+      // karena minified Prisma ikut tercetak.
+      try {
+        const session = await this.prisma.session.findUnique({
+          where: { id: sessionId },
+          include: { account: true, pc: true },
+        });
 
-      if (!session || session.status !== SessionStatus.BERJALAN) {
-        clearInterval(interval);
-        this.sessionIntervals.delete(sessionId);
-        return;
-      }
+        if (!session || session.status !== SessionStatus.BERJALAN) {
+          berhenti();
+          return;
+        }
 
-      const elapsedDetik = Math.max(0, Math.floor((Date.now() - session.waktuMulai.getTime()) / 1000));
-      const sisaDetik = Math.max(0, session.account.sisaWaktuDetik - elapsedDetik);
+        const elapsedDetik = Math.max(0, Math.floor((Date.now() - session.waktuMulai.getTime()) / 1000));
+        const sisaDetik = Math.max(0, session.account.sisaWaktuDetik - elapsedDetik);
 
-      await this.prisma.session.update({
-        where: { id: sessionId },
-        data: { durasiTerpakaiDetik: elapsedDetik },
-      });
+        try {
+          await this.prisma.session.update({
+            where: { id: sessionId },
+            data: { durasiTerpakaiDetik: elapsedDetik },
+          });
+        } catch (e) {
+          // P2025 = sesinya dihapus di antara findUnique dan update. Itu hal
+          // yang wajar (mis. skrip pembersihan), bukan kondisi error, jadi tick
+          // ini harus berhenti dan tidak boleh diulang-ulang mencoba.
+          if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
+            berhenti();
+            return;
+          }
+          throw e;
+        }
 
-      this.gatewayEvents?.emitSessionTick(session.pcId, sisaDetik);
-      this.gatewayEvents?.broadcastPcUpdate();
+        this.gatewayEvents?.emitSessionTick(session.pcId, sisaDetik);
+        // Sengaja tidak di-await, jadi pemanggilnya harus aman dari penolakan.
+        this.gatewayEvents?.broadcastPcUpdate();
 
-      if (sisaDetik <= 0) {
-        await this.stopSession(sessionId, 'habis');
-        clearInterval(interval);
-        this.sessionIntervals.delete(sessionId);
-        return;
+        if (sisaDetik <= 0) {
+          await this.stopSession(sessionId, 'habis');
+          berhenti();
+        }
+      } catch (e) {
+        // Apa pun yang terjadi, jangan jatuhkan proses. Yang dicatat apa pun,
+        // tick berikutnya akan mencoba lagi.
+        const pesan = e instanceof Error ? e.message : String(e);
+        this.gatewayEvents?.logTickError(`tick sesi ${sessionId}: ${pesan}`);
       }
     }, 1000);
 
@@ -673,8 +706,16 @@ export class SessionService implements OnModuleDestroy {
 
   private startDisconnectCheck(): void {
     this.disconnectCheckInterval = setInterval(async () => {
-      await this.checkGracePeriodExpired();
-      await this.checkPcOffline();
+      // Pengaman lapis kedua. Dua checker di bawah sudah punya try/catch
+      // sendiri, tapi kalau ada ubahan nanti yang salah satu lupa, callback ini
+      // yang harus menjadi penjaga terakhir sebelum proses ikut mati.
+      try {
+        await this.checkGracePeriodExpired();
+        await this.checkPcOffline();
+      } catch (e) {
+        const pesan = e instanceof Error ? e.message : String(e);
+        this.gatewayEvents?.logTickError(`pemeriksaan berkala: ${pesan}`);
+      }
     }, 10000);
   }
 

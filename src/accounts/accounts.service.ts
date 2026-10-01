@@ -336,10 +336,22 @@ export class AccountsService {
 
     const passwordHash = await bcrypt.hash(changePasswordDto.password, 10);
 
-    return this.prisma.account.update({
+    const hasil = await this.prisma.account.update({
       where: { id },
       data: { passwordHash },
     });
+
+    // Dicatat karena ini perubahan keamanan pada akun pelanggan, dan
+    // jejak aktivitas lama tidak pernah memuatnya. Password barunya TIDAK
+    // ikut ditulis, hanya penandanya.
+    this.sessionGateway.broadcastActivityLog('account:password_changed', {
+      accountId: id,
+      akun: account.kodeUnik ?? account.nama,
+      tipe: account.tipe,
+      sandiDiubah: true,
+    });
+
+    return hasil;
   }
 
   async revoke(id: string) {

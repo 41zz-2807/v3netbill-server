@@ -16,6 +16,7 @@ import { Logger, UnauthorizedException } from '@nestjs/common';
 import { Role, AccountType } from '@prisma/client';
 import { ActivityLogService } from '../activity-log/activity-log.service.js';
 import { NotifikasiService } from '../notifikasi/notifikasi.service.js';
+import { LogBillingService } from '../log-billing/log-billing.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY } from '../settings/otp-keys.js';
 import { BYPASS_PIN_HASH_KEY } from '../settings/bypass-keys.js';
@@ -41,6 +42,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     private activityLogService: ActivityLogService,
     private prisma: PrismaService,
     private notifikasiService: NotifikasiService,
+    private logBilling: LogBillingService,
   ) {}
 
   afterInit(server: Server): void {
@@ -384,6 +386,11 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
 
     const result = await this.sessionService.unlockPc(pcId);
+    if (result.unlocked) {
+      // Dicatat supaya jejak "PC dibuka manual" ada di log. Ini yang penting
+      // kalau ada yang bertanya kenapa layar PC terbuka.
+      this.broadcastActivityLog('pc_unlock', { pcId, by: 'operator' });
+    }
     return { success: result.unlocked, message: result.message };
   }
 
@@ -437,20 +444,30 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   }
 
   broadcastActivityLog(event: string, payload: Record<string, unknown>): void {
+    const at = new Date().toISOString();
     const logEntry = {
       event,
       ...payload,
-      at: new Date().toISOString(),
+      at,
     };
     this.server.to('dashboard').emit('dashboard:log', logEntry);
+
+    // Log billing BERKAS. Satu titik ini sudah jadi corong untuk hampir
+    // semua aktivitas: sesi mulai dan berakhir, seluruh jenis transaksi
+    // akun, kunci/mematikan PC, dan akun yang dinonaktifkan. Menambah event
+    // baru cukup lewat sini, tidak perlu menyeberang ke modul lain.
+    //
+    // Berbeda dari yang di bawah, yang ini tidak pernah melempar: penulisan
+    // berkas gagal tidak boleh mengganggu operasi yang sedang berjalan.
+    this.logBilling.tulis(event, { ...payload, by: (payload['by'] as string) ?? null });
 
     // Save to database (fire and forget)
     this.activityLogService.create({
       event,
       detail: JSON.stringify(payload),
-      pcId: (payload.pcId as string) ?? null,
-      accountId: (payload.accountId as string) ?? null,
-      kasirId: (payload.kasirId as string) ?? null,
+      pcId: (payload['pcId'] as string) ?? null,
+      accountId: (payload['accountId'] as string) ?? null,
+      kasirId: (payload['kasirId'] as string) ?? null,
     }).catch((err) => {
       this.logger.error(`Failed to save activity log: ${err.message}`);
     });

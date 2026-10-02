@@ -47,6 +47,30 @@ export interface InstallerMeta {
 }
 
 /**
+ * Metadata installer Windows (MSI).
+ *
+ * `versionName` dibaca dari **dari dalam berkas MSI**, bukan dari nama berkas
+ * dan bukan dari input orang. Alasannya sangat konkret: `installer_meta` hanya
+ * menyimpan nama berkas `installer-<timestamp>.msi`, dan nama itu tidak
+ * berubah antar build — semua unggahan punya bentuk
+ * yang sama persis, sehingga tidak ada satu pun angka yang bisa dibandingkan.
+ *
+ * MSI menyimpan nomor versi sebagai properti bernama `ProductVersion`.Berkas MSI
+ * adalah basis data OLE, jadi nilainya bukan teks polos — tapi string pool-nya
+ * menaruh entri berdampingan TANPA pemisah, sehingga byte tepat setelah
+ * `ProductVersion` sudah merupakan versinya. Detail cara bacanya di
+ * `bacaVersiMsi()`, yang sudah diverifikasi terhadap berkas MSI asli.
+ *
+ * `versionName` boleh `null` kalau tidak terbaca. Unggahan tetap dianggap
+ * berhasil dalam kasus itu — lebih baik ada MSI-nya daripada tidak sama sekali
+ * — dan halaman hanya menampilkan "versi tidak terbaca", bukan menebak.
+ */
+export interface MsiMeta extends InstallerMeta {
+  versionName: string | null;
+  sha256: string | null;
+}
+
+/**
  * Metadata APK aplikasi mobile.
  *
  * `versionCode` dan `versionName` dibaca langsung dari dalam berkas APK saat
@@ -173,20 +197,71 @@ export class SettingsService implements OnApplicationBootstrap {
     const filePath = path.join(INSTALLER_DIR, filename);
     fs.writeFileSync(filePath, file.buffer);
 
-    const meta: InstallerMeta = {
+    const meta: MsiMeta = {
       filename,
       sizeBytes: file.size,
       uploadedAt: new Date().toISOString(),
+      versionName: this.bacaVersiMsi(filePath),
+      sha256: this.hitungSha256Berkas(filePath, 'MSI'),
     };
     await this.set('installer_meta', JSON.stringify(meta));
     return meta;
   }
 
-  async getInstallerMeta(): Promise<InstallerMeta | null> {
+  /**
+   * Baca `ProductVersion` dari dalam berkas MSI.
+   *
+   * MSI adalah basis data OLE Compound File, jadi `Property` bukan teks polos
+   * dan tidak bisa dicari dengan `includes()` lalu mengambil N byte setelahnya
+   * dengan panjang tetap. Yang dipakai: nama properti diikuti satu byte
+   * panjang, lalu nilai sepanjang byte itu.
+   *
+   * ⚠️ Hasil yang dikembalikan sudah divalidasi sebagai nomor versi MSI yang
+   * masuk akal (`x.y.z.w`). Tanpa validasi itu, apa pun yang kebetulan dibaca
+   * akan ditampilkan sebagai "versi" di halaman — dan halaman ini justru
+   * dibuat supaya orang percaya pada angkanya.
+   */
+  private bacaVersiMsi(filePath: string): string | null {
+    try {
+      const buf = fs.readFileSync(filePath);
+      const kunci = 'ProductVersion';
+      const mulai = buf.indexOf(kunci, 0, 'latin1');
+      if (mulai < 0) return null;
+
+      // ⚠️ TIDAK ada byte panjang di sebelah nama. String pool MSI menaruh
+      // setiap entri berdampingan tanpa pemisah, jadi bytes setelah
+      // `ProductVersion` langsung adalah nilainya:
+      //   ProductVersion1.0.12.0UpgradeCode{7F3A...
+      // Ini diverifikasi langsung terhadap berkas MSI asli, bukan dari
+      // dokumentasi. Versi pertama dari fungsi ini mengira ada byte panjang
+      // dan selalu mengembalikan null.
+      const sisa = buf.toString('latin1', mulai + kunci.length, mulai + kunci.length + 32);
+      const cocok = /\d+(?:\.\d+){1,3}/.exec(sisa);
+      if (!cocok) return null;
+
+      const nilai = cocok[0];
+      // Karena tidak ada pemisah, versi yang lebih panjang akan terpotong
+      // (mis. 1.0.12.05 terbaca jadi 1.0.12.0). Karakter berikutnya wajib
+      // bukan angka dan bukan titik, kalau tidak jangan dipakai.
+      const berikut = sisa.charAt(nilai.length);
+      if (berikut === '.' || (berikut >= '0' && berikut <= '9')) {
+        this.logger.warn(`Versi MSI terpotong: "${nilai}" diikuti "${berikut}" — abaikan`);
+        return null;
+      }
+      return nilai;
+    } catch (err) {
+      this.logger.warn(`Gagal membaca versi MSI: ${(err as Error).message}`);
+      return null;
+    }
+  }
+
+  async getInstallerMeta(): Promise<MsiMeta | null> {
     const raw = await this.get('installer_meta');
     if (!raw) return null;
     try {
-      return JSON.parse(raw) as InstallerMeta;
+      // MSI yang terupload sebelum versi ini tidak punya field versi, jadi
+      // jangan menganggap `versionName` selalu ada.
+      return JSON.parse(raw) as MsiMeta;
     } catch {
       return null;
     }
@@ -258,11 +333,15 @@ export class SettingsService implements OnApplicationBootstrap {
   }
 
   private hitungSha256(filePath: string): string | null {
+    return this.hitungSha256Berkas(filePath, 'APK');
+  }
+
+  private hitungSha256Berkas(filePath: string, label: string): string | null {
     try {
       return createHash('sha256').update(fs.readFileSync(filePath)).digest('hex');
     } catch (err) {
       this.logger.warn(
-        `Gagal menghitung sha256 APK: ${(err as Error).message}`,
+        `Gagal menghitung sha256 ${label}: ${(err as Error).message}`,
       );
       return null;
     }

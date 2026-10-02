@@ -92,6 +92,18 @@ export class SettingsController {
     return { success: true, meta };
   }
 
+  @Get('installer/info')
+  async getInstallerInfo() {
+    const meta = await this.settingsService.getInstallerMeta();
+    return {
+      ada: meta !== null,
+      versionName: meta?.versionName ?? null,
+      ukuranBytes: meta?.sizeBytes ?? null,
+      sha256: meta?.sha256 ?? null,
+      tanggalUpload: meta?.uploadedAt ?? null,
+    };
+  }
+
   @Get('installer')
   async getInstaller(@Res() res: Response) {
     const meta = await this.settingsService.getInstallerMeta();

@@ -16,6 +16,7 @@ import { LaporanModule } from './laporan/laporan.module.js';
 import { ActivityLogModule } from './activity-log/activity-log.module.js';
 import { NotifikasiModule } from './notifikasi/notifikasi.module.js';
 import { LogBillingModule } from './log-billing/log-billing.module.js';
+import { DiagnosaModule } from './diagnosa/diagnosa.module.js';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
 import { JwtAuthGuard } from './common/guards/jwt-auth.guard.js';
 import { RolesGuard } from './common/guards/roles.guard.js';
@@ -38,6 +39,7 @@ import { RolesGuard } from './common/guards/roles.guard.js';
     ActivityLogModule,
     NotifikasiModule,
     LogBillingModule,
+    DiagnosaModule,
   ],
   controllers: [AppController],
   providers: [

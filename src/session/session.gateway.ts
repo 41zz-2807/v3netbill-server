@@ -93,6 +93,15 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       return false;
     }
 
+    // Satu koneksi bisa mencapai sini DUA kali: agent menaruh pcId/agentToken
+    // di handshake query (dipakai handleConnection) DAN mengirim event
+    // agent:register. Tanpa penjaga ini tiap koneksi menulis lastHeartbeatAt
+    // dua kali, mendorong pc_update dua kali, dan mengirim config OTP/PIN
+    // bypass dua kali ke socket yang sama.
+    if (this.socketPcMap.get(client.id) === pcId) {
+      return true;
+    }
+
     const existingSocket = this.pcSocketMap.get(pcId);
     if (existingSocket && existingSocket !== client.id) {
       this.server.in(existingSocket).disconnectSockets(true);

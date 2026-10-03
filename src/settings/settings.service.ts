@@ -10,6 +10,14 @@ import { ActivityLogService } from '../activity-log/activity-log.service.js';
 import { SessionGateway } from '../session/session.gateway.js';
 import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY, OTP_KEYS } from './otp-keys.js';
 import { BYPASS_PIN_HASH_KEY } from './bypass-keys.js';
+import {
+  NEXTCLOUD_URL_KEY,
+  NEXTCLOUD_USER_KEY,
+  NEXTCLOUD_PASSWORD_KEY,
+  NEXTCLOUD_FOLDER_KEY,
+  NEXTCLOUD_FOLDER_BAVAAN,
+  NEXTCLOUD_KEYS,
+} from './nextcloud-keys.js';
 import { createHash } from 'crypto';
 // Paket CJS tanpa tipe. Default import, bukan `import = require()`, karena
 // project ini ESM (`"type": "module"` + module nodenext) dan import-equals
@@ -144,6 +152,11 @@ export class SettingsService implements OnApplicationBootstrap {
     if (OTP_KEYS.includes(key)) {
       await this.pushOtpConfigToAgents();
     }
+    if (NEXTCLOUD_KEYS.includes(key)) {
+      // Dipush per-key, bukan per-form: jadi mengorbankan password saja
+      // sudah cukup untuk membuat semua agent langsung memakai password baru.
+      await this.pushNextcloudConfigToAgents();
+    }
     return { key, value };
   }
 
@@ -157,6 +170,33 @@ export class SettingsService implements OnApplicationBootstrap {
     const terkirim = this.sessionGateway.pushOtpConfig(botToken, chatId);
     this.logger.log(
       `OTP config dipush ke ${terkirim} agent (bot=${botToken ? 'terisi' : 'kosong'}, chatId=${chatId ? 'terisi' : 'kosong'})`,
+    );
+    return terkirim;
+  }
+
+  /**
+   * Kirim konfigurasi Nextcloud terbaru ke semua agent aktif.
+   *
+   * Kosong berarti fitur tidak dipakai, dan agent berhenti sebelum melakukan
+   * apa pun — jadi mengosongkan URL saja cukup untuk mematikannya di semua PC.
+   */
+  async pushNextcloudConfigToAgents(): Promise<number> {
+    const [url, user, pass, folder] = await Promise.all([
+      this.get(NEXTCLOUD_URL_KEY),
+      this.get(NEXTCLOUD_USER_KEY),
+      this.get(NEXTCLOUD_PASSWORD_KEY),
+      this.get(NEXTCLOUD_FOLDER_KEY),
+    ]);
+    const terkirim = this.sessionGateway.pushNextcloudConfig(
+      url ?? '',
+      user ?? '',
+      pass ?? '',
+      folder || NEXTCLOUD_FOLDER_BAVAAN,
+    );
+    this.logger.log(
+      `Nextcloud config dipush ke ${terkirim} agent ` +
+        `(url=${url ? 'terisi' : 'kosong'}, user=${user ? 'terisi' : 'kosong'}, ` +
+        `password=${pass ? 'terisi' : 'kosong'}, folder=${folder || NEXTCLOUD_FOLDER_BAVAAN})`,
     );
     return terkirim;
   }

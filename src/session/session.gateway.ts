@@ -19,7 +19,22 @@ import { NotifikasiService } from '../notifikasi/notifikasi.service.js';
 import { LogBillingService } from '../log-billing/log-billing.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY } from '../settings/otp-keys.js';
+import {
+  NEXTCLOUD_URL_KEY,
+  NEXTCLOUD_USER_KEY,
+  NEXTCLOUD_PASSWORD_KEY,
+  NEXTCLOUD_FOLDER_KEY,
+  NEXTCLOUD_FOLDER_BAVAAN,
+} from '../settings/nextcloud-keys.js';
 import { BYPASS_PIN_HASH_KEY } from '../settings/bypass-keys.js';
+
+/** Kunci Setting Nextcloud, dipakai untuk query `sendNextcloudConfigTo`. */
+const NEXTCLOUD_KEYS_DI_GATEWAY = [
+  NEXTCLOUD_URL_KEY,
+  NEXTCLOUD_USER_KEY,
+  NEXTCLOUD_PASSWORD_KEY,
+  NEXTCLOUD_FOLDER_KEY,
+];
 
 @WebSocketGateway({
   cors: {
@@ -126,6 +141,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     // setting yang disimpan saat agent offline ikut tersimpan di disk PC.
     await this.sendOtpConfigTo(pcId, client.id);
     await this.sendBypassConfigTo(pcId, client.id);
+    await this.sendNextcloudConfigTo(pcId, client.id);
     return true;
   }
 
@@ -181,6 +197,43 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   }
 
   /** Ambil setting OTP dari DB lalu kirim ke satu socket agent. */
+  /**
+   * Kirim konfigurasi Nextcloud ke satu agent (dipakai saat register).
+   *
+   * Kosong berarti fitur tidak dipakai; agent lalu berhenti sebelum melakukan
+   * apa pun, jadi tidak ada request sia-sia ke server yang memang tidak ada.
+   */
+  private async sendNextcloudConfigTo(pcId: string, socketId: string): Promise<void> {
+    try {
+      const rows = await this.prisma.setting.findMany({
+        where: { key: { in: NEXTCLOUD_KEYS_DI_GATEWAY } },
+      });
+      const map = new Map(rows.map((r) => [r.key, r.value ?? '']));
+      const url = map.get(NEXTCLOUD_URL_KEY) ?? '';
+      const user = map.get(NEXTCLOUD_USER_KEY) ?? '';
+      const pass = map.get(NEXTCLOUD_PASSWORD_KEY) ?? '';
+      const folder = map.get(NEXTCLOUD_FOLDER_KEY) || NEXTCLOUD_FOLDER_BAVAAN;
+      if (!url || !user) return;
+      this.server.to(socketId).emit('agent:nextcloud_config', { url, user, pass, folder });
+      this.logger.log(`Nextcloud config dikirim ke agent ${pcId} saat register`);
+    } catch (err) {
+      this.logger.warn(
+        `Gagal mengirim Nextcloud config ke ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /** Broadcast konfigurasi Nextcloud ke semua agent aktif. */
+  pushNextcloudConfig(url: string, user: string, pass: string, folder: string): number {
+    let terkirim = 0;
+    for (const [pcId, socketId] of this.pcSocketMap.entries()) {
+      this.server.to(socketId).emit('agent:nextcloud_config', { url, user, pass, folder });
+      terkirim++;
+      this.logger.log(`Nextcloud config dikirim ke agent ${pcId} (${socketId})`);
+    }
+    return terkirim;
+  }
+
   private async sendOtpConfigTo(pcId: string, socketId: string): Promise<void> {
     try {
       const rows = await this.prisma.setting.findMany({

@@ -187,7 +187,7 @@ export class SettingsService implements OnApplicationBootstrap {
       this.get(NEXTCLOUD_PASSWORD_KEY),
       this.get(NEXTCLOUD_FOLDER_KEY),
     ]);
-    const terkirim = this.sessionGateway.pushNextcloudConfig(
+    const terkirim = await this.sessionGateway.pushNextcloudConfig(
       url ?? '',
       user ?? '',
       pass ?? '',

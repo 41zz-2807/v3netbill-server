@@ -213,9 +213,18 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       const user = map.get(NEXTCLOUD_USER_KEY) ?? '';
       const pass = map.get(NEXTCLOUD_PASSWORD_KEY) ?? '';
       const folder = map.get(NEXTCLOUD_FOLDER_KEY) || NEXTCLOUD_FOLDER_BAVAAN;
-      if (!url || !user) return;
-      this.server.to(socketId).emit('agent:nextcloud_config', { url, user, pass, folder });
-      this.logger.log(`Nextcloud config dikirim ke agent ${pcId} saat register`);
+        if (!url || !user) return;
+        // Nama PC ikut dikirim karena inilah satu-satunya identifier yang bisa
+        // dikenali manusia. Tanpa itu nama berkasnya jadi UUID, dan kasir tidak
+        // bisa memetakan berkas mana milik PC yang sedang dia perbaiki.
+        const pc = await this.prisma.pc.findUnique({
+          where: { id: pcId },
+          select: { namaPc: true },
+        });
+        this.server
+          .to(socketId)
+          .emit('agent:nextcloud_config', { url, user, pass, folder, nama: pc?.namaPc ?? '' });
+        this.logger.log(`Nextcloud config dikirim ke agent ${pcId} saat register`);
     } catch (err) {
       this.logger.warn(
         `Gagal mengirim Nextcloud config ke ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
@@ -224,10 +233,17 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   }
 
   /** Broadcast konfigurasi Nextcloud ke semua agent aktif. */
-  pushNextcloudConfig(url: string, user: string, pass: string, folder: string): number {
+  async pushNextcloudConfig(url: string, user: string, pass: string, folder: string): Promise<number> {
     let terkirim = 0;
     for (const [pcId, socketId] of this.pcSocketMap.entries()) {
-      this.server.to(socketId).emit('agent:nextcloud_config', { url, user, pass, folder });
+      // Nama PC berbeda-beda, jadi tidak bisa diambil sekali untuk semua.
+      const pc = await this.prisma.pc.findUnique({
+        where: { id: pcId },
+        select: { namaPc: true },
+      });
+      this.server
+        .to(socketId)
+        .emit('agent:nextcloud_config', { url, user, pass, folder, nama: pc?.namaPc ?? '' });
       terkirim++;
       this.logger.log(`Nextcloud config dikirim ke agent ${pcId} (${socketId})`);
     }

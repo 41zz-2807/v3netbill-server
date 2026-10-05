@@ -59,6 +59,15 @@ export interface SessionGatewayEvents {
    * query DB; pemanggilnya WAJIB dibungkus try/catch.
    */
   kirimUlangNamaPc(pcId: string): Promise<void>;
+  /**
+   * Kunci layar PC secara langsung (event `admin:lock` ke agent).
+   *
+   * ⚠️ Dipisah dari `dashboard:lock_pc` karena pemanggil itu sekaligus
+   * menjalankan `unlockPc()` (menghentikan sesi). Kasus "PC ditandai rusak"
+   * sesinya sudah dihentikan lebih dulu oleh `PcService`, jadi yang dibutuhkan
+   * hanya mengunci layarnya.
+   */
+  kunciLayarPc(pcId: string): Promise<void>;
 }
 
 @Injectable()
@@ -92,6 +101,35 @@ export class SessionService implements OnModuleDestroy {
     } catch (e) {
       const pesan = e instanceof Error ? e.message : String(e);
       this.gatewayEvents?.logTickError(`kirim nama PC baru gagal: ${pesan}`);
+    }
+  }
+
+  /**
+   * Kunci layar PC. Aman dipanggil tanpa try/catch di pemanggil — metode ini tidak
+   * pernah melempar, karena PC offline adalah kondisi normal (bukan error).
+   */
+  async kunciLayarPc(pcId: string): Promise<void> {
+    try {
+      await this.gatewayEvents?.kunciLayarPc(pcId);
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      this.gatewayEvents?.logTickError(`kunci layar PC gagal: ${pesan}`);
+    }
+  }
+
+  /**
+   * Dorong ulang daftar PC ke dashboard (event `dashboard:pc_update`).
+   *
+   * ⚠️ Dipakai `PcService` setelah flag "PC rusak" berubah, supaya PC itu
+   * hilang dari dashboard seketika tanpa menunggu 10 detik polling.
+   * Tidak pernah melempar — pemanggilnya tidak perlu try/catch.
+   */
+  async broadcastPcUpdate(): Promise<void> {
+    try {
+      await this.gatewayEvents?.broadcastPcUpdate();
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      this.gatewayEvents?.logTickError(`broadcast daftar PC gagal: ${pesan}`);
     }
   }
 
@@ -190,7 +228,16 @@ export class SessionService implements OnModuleDestroy {
 
   async getDashboardData(): Promise<DashboardPcInfo[]> {
     const [pcs, sessionsBerjalan] = await Promise.all([
-      this.prisma.pc.findMany({ orderBy: { namaPc: 'asc' } }),
+      // PC yang ditandai rusak tidak muncul di dashboard. Daftar ini juga
+      // dipakai aplikasi mobile lewat `dashboard:pc_update`, jadi satu filter di
+      // sini menutup kedua-duanya.
+      //
+      // ⚠️ Jangan ikut menyaring laporan. Rekap dihitung dari `Transaction`,
+      // jadi PC yang ditandai tetap masuk rekap harian.
+      this.prisma.pc.findMany({
+        where: { rusak: false },
+        orderBy: { namaPc: 'asc' },
+      }),
       this.prisma.session.findMany({
         where: { status: SessionStatus.BERJALAN },
       }),
@@ -511,6 +558,25 @@ export class SessionService implements OnModuleDestroy {
     durasiDetikTersedia?: number;
     account?: { kodeUnik: string | null; nama: string | null; tipe: AccountType };
   }> {
+    // ⚠️ PC yang ditandai rusak tidak boleh dipakai — dicek di sini, BUKAN di
+    // masing-masing pemanggil. Tiga cara mulai sesi (`loginRequest`,
+    // `startFromDashboard`, `createVoucherAndStart`) semuanya lewat fungsi ini,
+    // jadi satu titik ini menutup semuanya — termasuk percobaan login langsung
+    // dari layar PC, yang tidak bisa dicegah dari frontend.
+    //
+    // ⚠️ Pengecekan ini WAJIB di atas penulisan `lastUsedAt` dan pembuatan
+    // `Session`. Kalau ditelepurkan, voucher pelanggan ikut terpakai.
+    const pc = await this.prisma.pc.findUnique({
+      where: { id: pcId },
+      select: { rusak: true },
+    });
+    if (!pc) {
+      return { success: false, message: 'PC tidak ditemukan' };
+    }
+    if (pc.rusak) {
+      return { success: false, message: 'PC sedang tidak dipakai (ditandai rusak)' };
+    }
+
     const existingSession = await this.prisma.session.findFirst({
       where: { pcId, status: SessionStatus.BERJALAN },
     });

@@ -76,6 +76,20 @@ model Pc {
   status           PcStatus @default(IDLE)
   lastHeartbeatAt  DateTime?
   agentToken       String   @unique
+
+  // ⚠️ `rusak` BUKAN berarti PC ini benar-benar rusak. Itu flag operasional:
+  // operator menandainya saat PC sedang diservis atau sengaja dikosongkan.
+  //
+  // PC yang ditandai TIDAK muncul di dashboard, halaman login, dan aplikasi
+  // mobile — hanya di Halaman PC, supaya flag bisa dibatalkan. Sesi baru
+  // ditolak di `SessionService.createSessionAndStart()`, dan sesi yang sedang
+  // berjalan langsung dihentikan saat flag dinyalakan.
+  //
+  // ⚠️ Kolom ini TIDAK boleh dipakai untuk menyaring laporan. Rekap dihitung
+  // dari `Transaction`/`Session`, jadi PC yang ditandai tetap masuk rekap.
+  rusak            Boolean  @default(false)
+  alasanRusak      String?
+
   sessions         Session[]
 }
 

@@ -595,6 +595,23 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     this.logger.warn(pesan);
   }
 
+  /**
+   * Kunci layar PC (event `admin:lock` ke agent).
+   *
+   * ⚠️ Sengaja terpisah dari `handleDashboardLockPc()`: pemanggil itu sekaligus
+   * menjalankan `unlockPc()` (menghentikan sesi), sedangkan kasus "PC ditandai
+   * rusak" sesinya sudah dihentikan lebih dulu oleh `PcService`. Yang dibutuhkan
+   * di sana hanya mengunci layarnya.
+   */
+  async kunciLayarPc(pcId: string): Promise<void> {
+    const socketId = this.pcSocketMap.get(pcId);
+    if (!socketId) {
+      // PC offline = normal, bukan error. Tidak ada layar yang perlu dikunci.
+      return;
+    }
+    this.server.to(socketId).emit('admin:lock', { pcId });
+  }
+
   @SubscribeMessage('dashboard:subscribe')
   async handleDashboardSubscribe(@ConnectedSocket() client: Socket): Promise<{ success: boolean }> {
     client.join('dashboard');

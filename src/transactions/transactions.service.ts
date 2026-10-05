@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { TransactionsQueryDto } from './dto/transactions-query.dto.js';
+import { akhirHariWib, awalHariWib } from '../common/wib-date.js';
 
 @Injectable()
 export class TransactionsService {
@@ -15,13 +16,15 @@ export class TransactionsService {
 
     if (query.dari || query.sampai) {
       where.createdAt = {};
+      // ⚠️ Batas harus dihitung sebagai WIB, bukan `new Date(query.dari)` +
+      // `setHours(23,59,59,999)`. Server berjalan di UTC, jadi cara itu
+      // menghasilkan 00:00 UTC (07:00 WIB) sampai 23:59 UTC (06:59 WIB
+      // berikutnya) — 7 jam meleset di kedua ujung.
       if (query.dari) {
-        (where.createdAt as Record<string, Date>).gte = new Date(query.dari);
+        (where.createdAt as Record<string, Date>).gte = awalHariWib(query.dari);
       }
       if (query.sampai) {
-        const sampaiDate = new Date(query.sampai);
-        sampaiDate.setHours(23, 59, 59, 999);
-        (where.createdAt as Record<string, Date>).lte = sampaiDate;
+        (where.createdAt as Record<string, Date>).lte = akhirHariWib(query.sampai);
       }
     }
 

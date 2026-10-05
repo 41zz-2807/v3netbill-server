@@ -196,6 +196,23 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     return terkirim;
   }
 
+  /**
+   * Kirim Ulang konfigurasi Nextcloud ke SATU agent karena namanya berubah.
+   *
+   * ⚠️ Ini wajib dipanggil setelah `namaPc` diubah. Nama PC dipakai sebagai
+   * AWALAN nama berkas log yang diunggah ke Nextcloud
+   * (`Agent.Core/NextcloudLogUploader.cs`), dan agent menerimanya lewat
+   * `agent:nextcloud_config`. Tanpa dorongan ini, agent memakai nama LAMA
+   * sampai PC-nya reconnect — dan karenaoperator sering mengganti nama PC
+   * tepat saat memperbaiki mesin, log repair-nya bisa tersimpan di folder
+   * dengan nama PC yang sudah tidak dipakai.
+   */
+  async kirimUlangNamaPc(pcId: string): Promise<void> {
+    const socketId = this.pcSocketMap.get(pcId);
+    if (!socketId) return;
+    await this.sendNextcloudConfigTo(pcId, socketId);
+  }
+
   /** Ambil setting OTP dari DB lalu kirim ke satu socket agent. */
   /**
    * Kirim konfigurasi Nextcloud ke satu agent (dipakai saat register).
@@ -373,7 +390,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
         result.account!,
       );
       await this.broadcastPcUpdate();
-      await this.kabarPemakaiNotifikasi(pcId, result.account!.tipe);
+      await this.kabarPemakaiNotifikasi(pcId, result.account!, 'PC');
     } else {
       client.emit('client:login_result', { success: false, message: result.message });
     }
@@ -391,17 +408,23 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
    */
   private async kabarPemakaiNotifikasi(
     pcId: string,
-    tipe: AccountType,
+    akun: { kodeUnik: string | null; nama: string | null; tipe: AccountType },
+    sumber: 'PC' | 'Dashboard' | 'HP',
   ): Promise<void> {
     try {
       const pc = await this.prisma.pc.findUnique({
         where: { id: pcId },
         select: { namaPc: true },
       });
-      await this.notifikasiService.kirimSesiMulai({
-        namaPc: pc?.namaPc ?? 'PC',
-        tipe,
-      });
+      await this.notifikasiService.kirimSesiMulai(
+        {
+          namaPc: pc?.namaPc ?? 'PC',
+          tipe: akun.tipe,
+          kodeUnik: akun.kodeUnik,
+          nama: akun.nama,
+        },
+        sumber,
+      );
     } catch (e) {
       const pesan = e instanceof Error ? e.message : String(e);
       this.logger.warn(`Notifikasi sesi gagal dikirim: ${pesan}`);
@@ -610,6 +633,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       by: this.actorName(client),
       kasirId: client.data.userId,
     });
+    await this.kabarPemakaiNotifikasi(pcId, result.account!, 'Dashboard');
     return { success: true, sessionId: result.sessionId };
   }
 
@@ -639,6 +663,15 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       nama: null,
       tipe: AccountType.VOUCHER,
     });
+    await this.kabarPemakaiNotifikasi(
+      pcId,
+      {
+        kodeUnik: result.voucher?.kodeUnik ?? null,
+        nama: null,
+        tipe: AccountType.VOUCHER,
+      },
+      'Dashboard',
+    );
     return {
       success: true,
       sessionId: result.sessionId,

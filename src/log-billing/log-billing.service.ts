@@ -9,6 +9,7 @@ import {
 } from 'node:fs/promises';
 import { join, resolve, sep } from 'node:path';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { tanggalWib } from '../common/wib-date.js';
 
 /**
  * Nama berkas log. Tanggal ikut nama berkas, bukan disimpan di dalam, jadi
@@ -103,6 +104,18 @@ export class LogBillingService {
       // Folder belum ada berarti belum ada log. Kondisi normal, bukan error.
       return [];
     }
+  }
+
+  /**
+   * Buang cache nama PC.
+   *
+   * ⚠️ WAJIB dipanggil setiap kali `namaPc` berubah. Cache di
+   * `namaPcUntuk()` hanya diisi ulang saat masih kosong, jadi tanpa ini
+   * seluruh baris log SETELAH PC diganti namanya akan tetap memakai nama
+   * LAMA — persis kebalikan dari tujuan operator yang mengganti nama.
+   */
+  invalidateNamaPc(): void {
+    this.namaPc = new Map();
   }
 
   private async namaPcUntuk(pcId: string | null | undefined): Promise<string> {
@@ -236,9 +249,12 @@ export class LogBillingService {
    * tumbuh terus kalau server sempat mati berhari-hari.
    */
   async hapusLama(umurHari = UMUR_HARI): Promise<number> {
+    // `setDate` memakai jam lokal server (UTC). Aman di sini karena yang
+    // dipakai hanya tanggalnya, dan selisih 7 jam tidak cukup untuk melewati
+    // ambang tanggal pada jendela retensi 30 hari.
     const batas = new Date();
     batas.setDate(batas.getDate() - umurHari);
-    const batasTgl = batas.toISOString().slice(0, 10);
+    const batasTgl = tanggalWib(batas);
 
     let terhapus = 0;
     for (const tanggal of await this.daftarTanggal()) {
@@ -263,7 +279,11 @@ export class LogBillingService {
 }
 
 function hariIni(): string {
-  return new Date().toISOString().slice(0, 10);
+  // ⚠️ WAJIB tanggal WIB, bukan `new Date().toISOString().slice(0, 10)`.
+  // `toISOString()` mengembalikan tanggal **UTC**, dan WIB = UTC + 7 jam.
+  // Between 00:00 dan 06:59 WIB, tanggal UTC masih milik HARI SEBELUMNYA —
+  // jadi aktivitas jam-jam itu masuk berkas `billing-<kemarin>.log`.
+  return tanggalWib();
 }
 
 /**

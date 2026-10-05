@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service.js';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'node:crypto';
 import { AccountStatus, SessionStatus, PcStatus, AccountType, TransactionType, Prisma } from '@prisma/client';
-import { AMBANG_OFFLINE_MS, statusPcEfektif } from '../pc/pc-status.js';
+import { AMBANG_OFFLINE_MS, statusPcDitampilkan } from '../pc/pc-status.js';
 import { PANJANG_PASSWORD_MIN, PASSWORD_DEFAULT } from '../accounts/password.js';
 
 export interface DashboardPcInfo {
@@ -53,6 +53,12 @@ export interface SessionGatewayEvents {
   broadcastActivityLog(event: string, payload: Record<string, unknown>): void;
   /** Catat masalah pada tick sesi tanpa pernah melempar. */
   logTickError(pesan: string): void;
+  /**
+   * Nama PC berubah, jadi agent perlu diberi tahu karena memakai nama itu
+   * sebagai awalan nama berkas log Nextcloud. Async karena gateway melakukan
+   * query DB; pemanggilnya WAJIB dibungkus try/catch.
+   */
+  kirimUlangNamaPc(pcId: string): Promise<void>;
 }
 
 @Injectable()
@@ -71,6 +77,22 @@ export class SessionService implements OnModuleDestroy {
   setGatewayEvents(events: SessionGatewayEvents): Promise<void> {
     this.gatewayEvents = events;
     return this.recoverRunningSessions();
+  }
+
+  /**
+   * Kabari agent bahwa nama PC-nya berubah.
+   *
+   * Dipanggil setelah `namaPc` di-update. Jangan pernah melempar: nama PC
+   * hanya Cosmetic, dan kegagalan push ke agent tidak boleh membatalkan
+   * pengubahan nama yang sudah tersimpan.
+   */
+  async kirimUlangNamaKeAgent(pcId: string): Promise<void> {
+    try {
+      await this.gatewayEvents?.kirimUlangNamaPc(pcId);
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      this.gatewayEvents?.logTickError(`kirim nama PC baru gagal: ${pesan}`);
+    }
   }
 
   private async recoverRunningSessions(): Promise<void> {
@@ -139,20 +161,26 @@ export class SessionService implements OnModuleDestroy {
   }
 
   async heartbeat(pcId: string): Promise<void> {
-    await this.prisma.pc.update({
-      where: { id: pcId },
-      data: { lastHeartbeatAt: new Date() },
+    const session = await this.prisma.session.findFirst({
+      where: { pcId, status: SessionStatus.BERJALAN },
     });
 
-    const session = await this.prisma.session.findFirst({
-      where: {
-        pcId,
-        status: SessionStatus.BERJALAN,
-        disconnectedAt: { not: null },
+    await this.prisma.pc.update({
+      where: { id: pcId },
+      data: {
+        lastHeartbeatAt: new Date(),
+        // ⚠️ WAJIB. `checkPcOffline()` menulis OFFLINE ke kolom `status` tiap
+        // 10 detik, dan sebelum baris ini satu-satunya yang mengembalikannya
+        // adalah `registerPc()` — yaitu hanya saat agent reconnect. Kalau
+        // heartbeat tertinggal satu kali (>30 detik) tanpa memutus socket,
+        // kolomnya tetap OFFLINE padahal agentnya sehat: dashboard kehilangan
+        // hitung mundur, tombol Start muncul di PC yang sedang tersesi, dan
+        // Start itu selalu ditolak "PC sudah memiliki sesi berjalan".
+        status: session ? PcStatus.ACTIVE : PcStatus.IDLE,
       },
     });
 
-    if (session) {
+    if (session?.disconnectedAt) {
       await this.prisma.session.update({
         where: { id: session.id },
         data: { disconnectedAt: null },
@@ -181,9 +209,16 @@ export class SessionService implements OnModuleDestroy {
 
     return pcs.map((pc) => {
       const session = sessionByPc.get(pc.id);
-      // Kolom status di database tidak pernah diubah jadi OFFLINE, jadi status
-      // yang dikirim ke dashboard harus dihitung ulang dari heartbeat terakhir.
-      const status = statusPcEfektif(pc.status, pc.lastHeartbeatAt);
+      // Kolom `status` bisa berisi OFFLINE (ditulis `checkPcOffline()`), jadi
+      // yang menentukan adalah heartbeat — dan kalau ada sesi berjalan dengan
+      // heartbeat segar, statusnya ACTIVE apa pun isi kolom.
+      //
+      // ⚠️ HARUS `sessionByPc.has(pc.id)`, bukan `session !== null`. `Map.get()`
+      // mengembalikan `undefined` kalau kuncinya tidak ada, dan
+      // `undefined !== null` itu TRUE — sehingga SEMUA PC tanpa sesi ikut
+      // terbaca ACTIVE. Gejalanya persis seperti bug aslinya: PC idle tampil
+      // "Aktif" padahal tidak ada sesi sama sekali.
+      const status = statusPcDitampilkan(pc.status, pc.lastHeartbeatAt, sessionByPc.has(pc.id));
       if (!session) {
         return {
           id: pc.id,

@@ -17,6 +17,23 @@ import { FcmService } from './fcm.service.js';
  */
 const CHANNEL_ID = 'sesi_dimulai';
 
+/**
+ * Sensor nama member: dua karakter pertama, sisanya disembunyikan.
+ *
+ * Nama member adalah kredensial login-nya, jadi tidak boleh tampil penuh di
+ * layar kunci HP. Dua karakter pertama tetap membuat admin bisa tahu siapa yang
+ * sedang main tanpa membuat notifikasi jadi sumber kebocoran.
+ *
+ * `"Budi Santoso"` → `"Bu***"`
+ * `"Bu"` → `"Bu***"`   (nama pendek, tidak lebih pendek dari 2 huruf)
+ * `null` → `"-"`
+ */
+export function sensorNama(nama: string | null | undefined): string {
+  const bersih = (nama ?? '').trim();
+  if (bersih.length === 0) return '-';
+  return `${bersih.slice(0, 2)}***`;
+}
+
 @Injectable()
 export class NotifikasiService {
   private readonly logger = new Logger(NotifikasiService.name);
@@ -60,10 +77,20 @@ export class NotifikasiService {
    * sesi di salah satu PC.
    *
    * Sengaja tidak melempar error ke pemanggil. Pemanggilnya adalah
-   * `client:login_request`, yaitu jalan yang sedang dipakai pelanggan di
+   * `client:login_request` yaitu jalan yang sedang dipakai pelanggan di
    * komputer: notifikasi yang gagal tidak boleh pernah mengganggu login.
+   *
+   * `akun` adalah kode voucher atau nama member yang dipakai. Nama member
+   * ADALAH kredensial login-nya (`session.service.ts` mencocokkan `nama`), dan
+   * notifikasi Android terlihat di layar kunci HP yang bisa dibaca siapa pun.
+   * Karena itu nama member hanya terkirim **dua karakter pertama** sisanya
+   * disembunyikan — admin tetap bisa tahu siapa yang sedang main tanpa
+   * membuat HP jadi sumber kebocoran kredensial.
    */
-  async kirimSesiMulai(pc: { namaPc: string; tipe: AccountType }): Promise<void> {
+  async kirimSesiMulai(
+    pc: { namaPc: string; tipe: AccountType; kodeUnik?: string | null; nama?: string | null },
+    sumber = 'PC',
+  ): Promise<void> {
     try {
       const perangkat = await this.prisma.perangkat.findMany({
         where: { user: { role: Role.ADMIN } },
@@ -72,12 +99,16 @@ export class NotifikasiService {
 
       if (perangkat.length === 0) return;
 
-      // Identitas akun sengaja tidak ikut. Nama member adalah kredensial
-      // login-nya, dan notifikasi terlihat di layar kunci HP.
       const jenis = pc.tipe === AccountType.MEMBER ? 'Member' : 'Voucher';
+      // Voucher memakai kode unik, member memakai nama. Keduanya tidak boleh
+      // bocor penuh ke layar kunci.
+      const identitas =
+        pc.tipe === AccountType.MEMBER
+          ? sensorNama(pc.nama)
+          : (pc.kodeUnik ?? '-');
       const pesan = {
         judul: 'Sesi dimulai',
-        isi: `${jenis} · ${pc.namaPc}`,
+        isi: `${jenis} ${identitas} · ${pc.namaPc} (${sumber})`,
         data: { jenis: 'sesi_dimulai', pc: pc.namaPc },
         channelId: CHANNEL_ID,
       };

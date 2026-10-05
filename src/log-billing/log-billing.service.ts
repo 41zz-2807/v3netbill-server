@@ -322,6 +322,7 @@ const LABEL_EVENT: Record<string, string> = {
   pc_unlock: 'PC Dibuka',
   pc_unlocked: 'PC Dibuka',
   pc_shutdown: 'PC Dimatikan',
+  pc_shutdown_auto: 'PC Mati Otomatis',
 };
 
 /** Field yang ditulis, berurutan supaya log mudah dipindai mata. */
@@ -337,6 +338,9 @@ const URUT_FIELD: [string, string][] = [
   ['sisaWaktuKembali', 'sisaKembali'],
   ['sisaWaktuDetik', 'sisa'],
   ['alasan', 'alasan'],
+  // Menit idle dicatat sebagai angka sendiri, bukan disembunyikan di
+  // `keterangan` — biar saat membaca log tahu pasti berapa lama PC nganggur.
+  ['menit', 'idleMenit'],
   ['kasir', 'kasir'],
   ['sandiDiubah', 'sandiDiubah'],
   ['sesiDihentikan', 'sesiDihentikan'],
@@ -368,6 +372,9 @@ function susunFields(payload: Record<string, unknown>, namaPc: string): string {
     sisaWaktuKembali: payload['sisaWaktuKembali'] ?? null,
     sisaWaktuDetik: payload['sisaWaktuDetik'] ?? null,
     alasan: payload['alasan'] ?? null,
+    // Menit idle untuk auto-matikan. Number 0 di-cast ke string supaya tidak
+    // dianggap kosong — justru `0` yang paling perlu terlihat di log.
+    menit: payload['menit'] === undefined ? null : String(payload['menit']),
     // `username` dipakai untuk baris login, `by` untuk aktivitas dari
     // dashboard. Keduanya nama orang yang melakukan aksi, jadi satu kolom.
     kasir: (payload['by'] as string) ?? (payload['username'] as string) ?? null,

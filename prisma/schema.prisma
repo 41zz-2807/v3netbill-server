@@ -90,6 +90,21 @@ model Pc {
   rusak            Boolean  @default(false)
   alasanRusak      String?
 
+  // ⚠️ Kapan PC ini terakhir kali "dipakai". Dipakai untuk menghitung
+  // hitung mundur auto-matikan: PC idle selama `Setting.auto_shutdown_menit`
+  // menit dimatikan otomatis.
+  //
+  // ⚠️ JANGAN pernah di-update dari `heartbeat()`. Heartbeat datang tiap 15
+  // detik, jadi kalau timer ikut di-reset di sana, hitung mundur tidak pernah
+  // mencapai nol dan PC tidak pernah mati.
+  //
+  // Di-update hanya di tiga tempat: `registerPc()` (boot/reconnect),
+  // `stopSession()` (sesi berakhir), dan `unlockPc()` (kasir buka kunci).
+  //
+  // `null` = tidak ada timer. Dipakai juga sebagai penanda "pernah dikirim",
+  // supaya perintah mati tidak dikirim ulang setiap 10 detik.
+  terakhirAktifAt  DateTime?
+
   sessions         Session[]
 }
 

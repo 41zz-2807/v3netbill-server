@@ -12,6 +12,15 @@ export interface DashboardPcInfo {
   ipClient: string;
   status: PcStatus;
   lastHeartbeatAt: Date | null;
+  /**
+   * Sisa detik sebelum PC dimatikan otomatis. `null` = PC tidak akan dimatikan
+   * (sedang ada sesi berjalan, ditandai rusak, atau fiturnya dimatikan admin).
+   *
+   * ⚠️ Hitung mundur ini hanya informatif untuk kasir. Yang benar-benar mematikan
+   * PC tetap pemeriksaan di `checkAutoShutdown()` di server — bukan timer di
+   * browser, karena tab yang ditutup akan menghentikannya.
+   */
+  matiDalamDetik: number | null;
   session: {
     id: string;
     accountId: string;
@@ -68,7 +77,22 @@ export interface SessionGatewayEvents {
    * hanya mengunci layarnya.
    */
   kunciLayarPc(pcId: string): Promise<void>;
+  /**
+   * Kirim `admin:shutdown` ke agent PC — perintah matikan mesin.
+   *
+   * Return `true` kalau benar-benar terkirim, `false` kalau agent tidak
+   * tersambung. Pemanggil **wajib** memakai nilai balik itu: kalau `false` dan
+   * pemanggil tetap menandai timer sebagai "sudah dikirim", perintah ini tidak
+   * akan pernah diulang dan PC itu akan menggantung menyala selamanya.
+   */
+  matikanPcOtomatis(pcId: string): Promise<boolean>;
 }
+
+/**
+ * Nilai cadangan kalau `Setting.auto_shutdown_menit` kosong atau berisi sampah.
+ * Dipisah ke modul supaya bisa dipakai tanpa `this.` di dalam kelas.
+ */
+const AUTO_SHUTDOWN_DEFAULT_MENIT = 5;
 
 @Injectable()
 export class SessionService implements OnModuleDestroy {
@@ -76,6 +100,11 @@ export class SessionService implements OnModuleDestroy {
   private sessionIntervals: Map<string, NodeJS.Timeout> = new Map();
   private disconnectCheckInterval: NodeJS.Timeout | null = null;
   private gracePeriodDetik: number = 180;
+  /**
+   * Nilai setting yang terakhir memicu warning, supaya satu baris log rusak
+   * tidak diulang tiap 10 detik.
+   */
+  private autoShutdownPeringatanTerakhir: string | null = null;
   private gatewayEvents: SessionGatewayEvents | null = null;
 
   constructor(private prisma: PrismaService) {
@@ -183,6 +212,11 @@ export class SessionService implements OnModuleDestroy {
     const data: Prisma.PcUpdateInput = {
       status: runningSession ? PcStatus.ACTIVE : PcStatus.IDLE,
       lastHeartbeatAt: new Date(),
+      // ⚠️ Timer auto-matikan dinyalakan ulang di sini: PC baru boot atau
+      // reconnect, jadi hitungan mundurnya baru mulai. Kalau PC sedang punya
+      // sesi berjalan, sesi itu yang bakal me-reset ulang nanti — dan
+      // pemeriksa otomatis melewatkan PC yang punya sesi.
+      terakhirAktifAt: new Date(),
     };
     // Hanya tulis IP kalau berubah, supaya tidak menyentuh baris Pc tiap reconnect.
     if (ipTerlihat) {
@@ -248,6 +282,11 @@ export class SessionService implements OnModuleDestroy {
       ? await this.prisma.account.findMany({ where: { id: { in: accountIds } } })
       : [];
 
+    // Dibaca sekali per payload, bukan per PC — `getDashboardData()` dipanggil
+    // tiap 10 detik, jadi satu query untuk semua PC, bukan satu per PC.
+    const autoMenit = await this.autoShutdownMenit();
+    const sekarangMs = Date.now();
+
     const accountMap = new Map(accounts.map((a) => [a.id, a]));
     const sessionByPc = new Map<string, (typeof sessionsBerjalan)[number]>();
     for (const s of sessionsBerjalan) {
@@ -273,6 +312,8 @@ export class SessionService implements OnModuleDestroy {
           ipClient: pc.ipClient,
           status,
           lastHeartbeatAt: pc.lastHeartbeatAt,
+          // Sisa detik sebelum PC dimatikan otomatis, null = tidak akan dimatikan.
+          matiDalamDetik: this.sisaDetikAutoShutdown(pc, autoMenit, sekarangMs),
           session: null,
         };
       }
@@ -287,6 +328,11 @@ export class SessionService implements OnModuleDestroy {
         ipClient: pc.ipClient,
         status,
         lastHeartbeatAt: pc.lastHeartbeatAt,
+        // ⚠️ Selalu null saat ada sesi berjalan, apa pun isi kolomnya. Kalau
+        // kolomnya belum sempat di-reset (mis. backend restart di tengah sesi),
+        // dashboard tidak boleh menampilkan hitung mundur pada PC yang sedang
+        // dipakai pelanggan.
+        matiDalamDetik: null,
         session: {
           id: session.id,
           accountId: session.accountId,
@@ -756,7 +802,13 @@ export class SessionService implements OnModuleDestroy {
 
     await this.prisma.pc.update({
       where: { id: session.pcId },
-      data: { status: PcStatus.IDLE },
+      data: {
+        status: PcStatus.IDLE,
+        // ⚠️ Ini titik awal hitung mundur auto-matikan. Sesi baru yang
+        // me-reset ulang, jadi pelanggan berikutnya tidak pernah diberi
+        // hitungan mundur yang sisa dari sesi sebelumnya.
+        terakhirAktifAt: new Date(),
+      },
     });
 
     this.gatewayEvents?.emitSessionStop(session.pcId, alasan);
@@ -893,6 +945,22 @@ export class SessionService implements OnModuleDestroy {
     }
 
     await this.stopSession(session.id, 'manual');
+
+    // ⚠️ Kasir yang sengaja membuka kunci berarti PC itu mau dipakai — jadi
+    // hitungan mundur auto-matikan diundur dari sekarang, bukan dibiarkan
+    // habis dari sesi yang barusan dihentikan. Tanpa ini, kasir yang membuka
+    // kunci PC Manual akan melihat PC itu dimatikan 5 menit kemudian.
+await this.prisma.pc.update({
+      where: { id: pcId },
+      data: {
+        status: PcStatus.ACTIVE,
+        // Sesi berjalan -> tidak ada hitung mundur sama sekali. Sengaja `null`
+        // (bukan "sekarang") supaya dashboard tidak pernah menampilkan hitung
+        // mundur pada PC yang sedang dipakai.
+        terakhirAktifAt: null,
+      },
+    });
+
     return { unlocked: true, message: 'PC dibuka kuncinya' };
   }
 
@@ -904,6 +972,7 @@ export class SessionService implements OnModuleDestroy {
       try {
         await this.checkGracePeriodExpired();
         await this.checkPcOffline();
+        await this.checkAutoShutdown();
       } catch (e) {
         const pesan = e instanceof Error ? e.message : String(e);
         this.gatewayEvents?.logTickError(`pemeriksaan berkala: ${pesan}`);
@@ -936,6 +1005,132 @@ export class SessionService implements OnModuleDestroy {
       }
     } catch (e) {
       this.logger.warn(`Gagal menandai PC offline: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+ * Lama PC boleh menganggur sebelum dimatikan otomatis. Sumbernya tabel
+ * `Setting` key `auto_shutdown_menit`, nilai 0 = fitur dimatikan.
+ *
+ * ⚠️ Nilai dibaca ulang tiap panggilan, bukan di-cache, supaya admin bisa
+ * mengubahnya (termasuk menyetel 0 untuk mematikan fitur) dan langsung berlaku
+ * tanpa restart backend.
+ *
+ * ⚠️ Setting bisa kosong atau berisi sampah, jadi `parseInt` bisa jadi `NaN`.
+ * `NaN` dipakai untuk membandingkan tanggal akan membuat semua PC langsung
+ * dianggap sudah terlalu lama — dan seluruh PC mati bersamaan. Jadi nilai
+ * tidak valid selalu jatuh ke default.
+ */
+async autoShutdownMenit(): Promise<number> {
+    const setting = await this.prisma.setting.findUnique({
+      where: { key: 'auto_shutdown_menit' },
+    });
+    const parsed = setting ? parseInt(setting.value, 10) : NaN;
+    if (Number.isFinite(parsed) && parsed >= 0) {
+      return parsed;
+    }
+    // ⚠️ Warning hanya sekali per nilai berbeda. Fungsi ini dipanggil tiap 10
+    // detik, jadi tanpa penjaga ini satu setting rusak bisa mengisi log
+    // thousands baris dan menutupi masalah yang sebenarnya.
+    if (setting && setting.value !== this.autoShutdownPeringatanTerakhir) {
+      this.autoShutdownPeringatanTerakhir = setting.value;
+      this.logger.warn(
+        `auto_shutdown_menit tidak valid ("${setting.value}") — pakai default ${AUTO_SHUTDOWN_DEFAULT_MENIT} menit`,
+      );
+    }
+    return AUTO_SHUTDOWN_DEFAULT_MENIT;
+  }
+
+  /**
+   * Sisa detik sebelum PC dimatikan otomatis, atau `null` kalau tidak akan
+   * dimatikan. Dipakai untuk hitung mundur di dashboard.
+   */
+  private sisaDetikAutoShutdown(
+    pc: { terakhirAktifAt: Date | null },
+    menit: number,
+    sekarangMs: number,
+  ): number | null {
+    if (menit <= 0 || !pc.terakhirAktifAt) {
+      return null;
+    }
+    // Sisa waktu tidak boleh negatif: `null` berarti "tidak ada timer",
+    // sedangkan angka negatif berarti "sudah lewat" — itu kondisi yang harus
+    // ditangani pemeriksa, bukan ditshown ke kasir.
+    return Math.max(0, Math.floor((menit * 60 * 1000 - (sekarangMs - pc.terakhirAktifAt.getTime())) / 1000));
+  }
+
+  /**
+   * Matikan PC yang sudah lama menganggur.
+   *
+   * Dipanggil dari interval 10 detik. Lima pengaman di bawah itu WAJIB dan
+   * urutannya tidak boleh diubah:
+   *
+   * 1. Setting 0 -> lewati (fitur dimatikan admin).
+   * 2. PC dengan `rusak = true` -> lewati. Operator yang menandai PC itu
+   *    sedang mengurusnya sendiri, jadi tidak perlu kita padamkan juga.
+   * 3. PC yang punya sesi BERJALAN -> lewati. **Ini pengaman terpenting.** PC
+   *    yang sedang dipakai pelanggan tidak boleh dimatikan, dan pengecekan sesi
+   *    sengaja dilakukan SEBELUM mengirim apa pun.
+   * 4. Agent tidak tersambung -> lewati. Tidak ada yang bisa menerima
+   *    perintah, dan timer dibiarkan menyala supaya masih bisa dikirim
+   *    begitu agent konek lagi.
+   * 5. Kirim `admin:shutdown`, catat di log, lalu set `terakhirAktifAt = null`
+   *    sebagai penanda sudah dikirim — tanpa itu perintah yang sama dikirim
+   *    ulang tiap 10 detik.
+   */
+  private async checkAutoShutdown(): Promise<void> {
+    try {
+      const menit = await this.autoShutdownMenit();
+      if (menit <= 0) {
+        return;
+      }
+      const batas = new Date(Date.now() - menit * 60 * 1000);
+      const kandidat = await this.prisma.pc.findMany({
+        where: {
+          rusak: false,
+          terakhirAktifAt: { not: null, lte: batas },
+        },
+        select: { id: true, namaPc: true, terakhirAktifAt: true },
+      });
+      if (kandidat.length === 0) {
+        return;
+      }
+
+      for (const pc of kandidat) {
+        // Pengaman 3: sesi berjalan dicek satu per satu, bukan lewat relasi,
+        // supaya tidak bisa terlewat karena filter yang salah.
+        const sesi = await this.prisma.session.findFirst({
+          where: { pcId: pc.id, status: SessionStatus.BERJALAN },
+          select: { id: true },
+        });
+        if (sesi) {
+          continue;
+        }
+
+        // Pengaman 4: agent harus tersambung.
+        const terkirim = await this.gatewayEvents?.matikanPcOtomatis(pc.id);
+        if (!terkirim) {
+          continue;
+        }
+
+        // Pengaman 5: senapkan timer supaya tidak dikirim ulang.
+        await this.prisma.pc.update({
+          where: { id: pc.id },
+          data: { terakhirAktifAt: null },
+        });
+        this.logger.log(
+          `PC ${pc.namaPc} dimatikan otomatis — idle ${menit} menit tanpa aktivitas login`,
+        );
+        this.gatewayEvents?.broadcastActivityLog('pc_shutdown_auto', {
+          pcId: pc.id,
+          alasan: 'idle',
+          menit,
+          detail: `idle ${menit} menit tanpa aktivitas login`,
+        });
+      }
+      await this.gatewayEvents?.broadcastPcUpdate();
+    } catch (e) {
+      this.logger.warn(`Pemeriksaan auto-matikan gagal: ${(e as Error).message}`);
     }
   }
 

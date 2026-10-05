@@ -612,6 +612,25 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     this.server.to(socketId).emit('admin:lock', { pcId });
   }
 
+  /**
+   * Kirim `admin:shutdown` ke agent — perintah matikan mesin setelah PC idle.
+   *
+   * ⚠️ Mengembalikan boolean, bukan `void`. `SessionService.checkAutoShutdown()`
+   * memakai nilai balik itu untuk membedakan "terkirim" dari "agent offline".
+   * Kalau agent offline, timer harus dibiarkan menyala supaya perintahnya
+   * masih bisa dikirim begitu PC konek lagi — kalau tidak, PC itu menggantung
+   * menyala tanpa pernah dimatikan.
+   */
+  async matikanPcOtomatis(pcId: string): Promise<boolean> {
+    const socketId = this.pcSocketMap.get(pcId);
+    if (!socketId) {
+      return false;
+    }
+    this.server.to(socketId).emit('admin:shutdown', { pcId });
+    this.logger.log(`Perintah auto-matikan dikirim ke agent ${pcId}`);
+    return true;
+  }
+
   @SubscribeMessage('dashboard:subscribe')
   async handleDashboardSubscribe(@ConnectedSocket() client: Socket): Promise<{ success: boolean }> {
     client.join('dashboard');

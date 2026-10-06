@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { TeknisiService } from './teknisi.service.js';
 import * as bcrypt from 'bcrypt';
 import * as crypto from 'node:crypto';
 import { AccountStatus, SessionStatus, PcStatus, AccountType, TransactionType, Prisma } from '@prisma/client';
@@ -29,6 +30,19 @@ export interface DashboardPcInfo {
     tipe: AccountType;
     sisaDetik: number;
     waktuMulai: Date;
+  } | null;
+  /**
+   * Teknisi yang sedang memakai PC ini, atau `null`.
+   *
+   * ⚠️ Teknisi TIDAK pernah punya `session` di atas: dia tidak membuat baris
+   * `Session`, jadi tidak masuk `totalLogin` laporan dan tidak menghasilkan
+   * `Transaction` apa pun. Karena itu operator HARUS bisa membedakan kartu ini
+   * dari kartu yang sedang ditagih — kalau tidak, PC yang sedang dibongkar
+   * terlihat sama saja dengan PC yang berisi pelanggan.
+   */
+  teknisi: {
+    username: string;
+    mulaiAt: Date;
   } | null;
 }
 
@@ -124,7 +138,16 @@ export class SessionService implements OnModuleDestroy {
   private autoShutdownPeringatanTerakhir: string | null = null;
   private gatewayEvents: SessionGatewayEvents | null = null;
 
-  constructor(private prisma: PrismaService) {
+  constructor(
+    private prisma: PrismaService,
+    /**
+     * Opsional (`?`) supaya seluruh tes lama yang memanggil
+     * `new SessionService(prisma)` tidak ikut patah. Kalau `undefined`, seluruh
+     * jalur teknisi menjadi no-op yang aman — tidak ada sesi teknisi yang bisa
+     * tercatat, tapi juga tidak ada error.
+     */
+    private teknisi?: TeknisiService,
+  ) {
     this.loadGracePeriod();
     this.startDisconnectCheck();
   }
@@ -318,7 +341,7 @@ export class SessionService implements OnModuleDestroy {
   }
 
   async getDashboardData(): Promise<DashboardPcInfo[]> {
-    const [pcs, sessionsBerjalan] = await Promise.all([
+    const [pcs, sessionsBerjalan, sesiTeknisi] = await Promise.all([
       // PC yang ditandai rusak tidak muncul di dashboard. Daftar ini juga
       // dipakai aplikasi mobile lewat `dashboard:pc_update`, jadi satu filter di
       // sini menutup kedua-duanya.
@@ -332,6 +355,9 @@ export class SessionService implements OnModuleDestroy {
       this.prisma.session.findMany({
         where: { status: SessionStatus.BERJALAN },
       }),
+      // Satu query untuk semua PC, bukan satu per PC — `getDashboardData()`
+      // dipanggil tiap 10 detik dan tiap broadcast.
+      this.teknisi?.semuaSesiAktif() ?? Promise.resolve([]),
     ]);
 
     const accountIds = sessionsBerjalan.map((s) => s.accountId);
@@ -348,6 +374,16 @@ export class SessionService implements OnModuleDestroy {
     const sessionByPc = new Map<string, (typeof sessionsBerjalan)[number]>();
     for (const s of sessionsBerjalan) {
       sessionByPc.set(s.pcId, s);
+    }
+
+    // ⚠️ Satu PC hanya boleh punya satu baris `SesiTeknisi` terbuka. Map ini
+    // dipakai untuk menyaring kalau-kalau duplikat supaya dashboard tidak
+    // menampilkan teknisi ganda.
+    const teknisiByPc = new Map<string, { username: string; mulaiAt: Date }>();
+    for (const t of sesiTeknisi) {
+      if (!teknisiByPc.has(t.pcId)) {
+        teknisiByPc.set(t.pcId, { username: t.username, mulaiAt: t.mulaiAt });
+      }
     }
 
     return pcs.map((pc) => {
@@ -370,8 +406,20 @@ export class SessionService implements OnModuleDestroy {
           status,
           lastHeartbeatAt: pc.lastHeartbeatAt,
           // Sisa detik sebelum PC dimatikan otomatis, null = tidak akan dimatikan.
-          matiDalamDetik: this.sisaDetikAutoShutdown(pc, autoMenit, sekarangMs),
+          //
+          // ⚠️ PC yang sedang dipakai teknisi juga `null`. Hitung mundur di sini
+          // hanya informasi, dan `checkAutoShutdown()` sudah melewatinya — jadi
+          // angka yang tetap turunkan di kartu cuma algodón: operator melihat
+          // "SHUTDOWN DALAM 4:32" padahal PC tidak akan dimatikan selama
+          // teknisi masih di sana.
+          matiDalamDetik: teknisiByPc.has(pc.id)
+            ? null
+            : this.sisaDetikAutoShutdown(pc, autoMenit, sekarangMs),
           session: null,
+          // PC sedang dipakai teknisi: tidak ada sesi, tapi BUKAN PC kosong.
+          // Tanpa field ini operator tidak bisa membedakan PC yang sedang
+          // dibongkar dari PC yang menganggur.
+          teknisi: teknisiByPc.get(pc.id) ?? null,
         };
       }
 
@@ -399,8 +447,28 @@ export class SessionService implements OnModuleDestroy {
           sisaDetik,
           waktuMulai: session.waktuMulai,
         },
+        // ⚠️ Keduanya bisa non-null secara teori (teknisi login lalu ada sesi),
+        // tapi jalur login teknisi MENOLAK PC yang sudah punya sesi berjalan —
+        // jadi di practice hanya salah satu. Fieldnya tetap dikirim di kedua
+        // cabang supaya frontend tidak perlu menebak.
+        teknisi: teknisiByPc.get(pc.id) ?? null,
       };
     });
+  }
+
+  /**
+   * Id sesi pelanggan yang sedang berjalan di sebuah PC, atau `null`.
+   *
+   * Dipakai jalur login teknisi untuk menolak masuk kalau PC sedang ditagih.
+   * Satu query ringan; `getDashboardData()` tidak bisa dipakai untuk ini karena
+   * memuat seluruh PC.
+   */
+  async sesiBerjalanId(pcId: string): Promise<string | null> {
+    const sesi = await this.prisma.session.findFirst({
+      where: { pcId, status: SessionStatus.BERJALAN },
+      select: { id: true },
+    });
+    return sesi?.id ?? null;
   }
 
   async loginRequest(
@@ -1000,6 +1068,25 @@ export class SessionService implements OnModuleDestroy {
 
   /** Owner/admin menghentikan sesi aktif di sebuah PC agar layar terbuka (manual). */
   async unlockPc(pcId: string): Promise<{ unlocked: boolean; message?: string }> {
+    // ⚠️ Sesi TEKNISI diperiksa DI ATAS sesi pelanggan, bukan sebagai cabang
+    // terpisah di tiap pemanggil. Alasannya: `stop_session` dari PC client,
+    // `dashboard:lock_pc`, dan `POST /pcs/:id/unlock` semuanya lewat
+    // fungsi ini — dan tanpa penanganan di sini tombol STOP di layar PC
+    // tidak melakukan apa-apa, karena teknisi memang tidak punya baris
+    // `Session`. PC lalu terbuka tanpa jalan keluar selain dashboard.
+    const teknisi = await this.teknisi?.selesaiSesiUntukPc(pcId);
+    if (teknisi) {
+      try {
+        await this.gatewayEvents?.kunciLayarPc(pcId);
+      } catch (e) {
+        const pesan = e instanceof Error ? e.message : String(e);
+        this.gatewayEvents?.logTickError(`kunci layar PC ${pcId} gagal: ${pesan}`);
+      }
+      await this.broadcastPcUpdate();
+      this.logger.log(`Sesi teknisi ${teknisi} di PC ${pcId} ditutup, layar dikunci`);
+      return { unlocked: true, message: 'Sesi teknisi ditutup' };
+    }
+
     const session = await this.prisma.session.findFirst({
       where: { pcId, status: SessionStatus.BERJALAN },
     });
@@ -1169,6 +1256,17 @@ async autoShutdownMenit(): Promise<number> {
           select: { id: true },
         });
         if (sesi) {
+          continue;
+        }
+
+        // Pengaman 3b: sesi TEKNISI.
+        //
+        // ⚠️ Wajib, karena teknisi sengaja tidak punya baris `Session`, jadi
+        // Pengaman 3 di atas tidak pernah menangkapnya. Tanpa baris ini PC
+        // yang sedang dipakai teknisi ikut dihitung idle, dan `admin:shutdown`
+        // dikirim di tengah pengerjaan — kartu di dashboard menampilkan
+        // "SHUTDOWN DALAM" padahal orangnya masih di depan PC.
+        if (await this.teknisi?.adaSesiAktifUntukPc(pc.id)) {
           continue;
         }
 

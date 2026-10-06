@@ -50,6 +50,8 @@ type Opsi = {
   pc?: Partial<BarisPc>;
   /** true = ada sesi berjalan di PC itu */
   sesiBerjalan?: boolean;
+  /** Sesi teknisi aktif di PC itu? bawaan false. */
+  teknisiAktif?: boolean;
   /** nilai setting; string tidak valid sengaja bisa dipakai */
   setting?: string;
   /** agent tersambung? */
@@ -59,6 +61,7 @@ type Opsi = {
 function harness({
   pc: pcPartial,
   sesiBerjalan = false,
+  teknisiAktif = false,
   setting = String(MENIT),
   agentKonek = true,
 }: Opsi = {}) {
@@ -113,6 +116,12 @@ function harness({
       },
       account: { findMany: async () => [] },
     } as any,
+    {
+      adaSesiAktifUntukPc: async (pcId: string) => {
+        jejak.push(`teknisi.adaSesiAktifUntukPc(${pcId})`);
+        return teknisiAktif;
+      },
+    } as any,
   );
 
   const events = {
@@ -159,6 +168,42 @@ describe('pengaman: PC yang sedang dipakai tidak boleh dimatikan', () => {
     expect(jejak).not.toContain('matikanPcOtomatis(pc-1)');
     // Timer harus tetap menyala supaya diulang 10 detik lagi.
     expect(dapatPc().terakhirAktifAt).not.toBeNull();
+  });
+
+  // ⚠️ Pengaman 3b. Teknisi sengaja tidak punya baris `Session`, jadi
+  // Pengaman 3 di atas tidak pernah menangkapnya. Tanpa pengaman ini PC yang
+  // sedang dipakai teknisi ikut terhitung idle dan `admin:shutdown` dikirim
+  // di tengah pengerjaan.
+  it('sesi TEKNISI -> tidak dikirim, dan timer TIDAK disenapkan', async () => {
+    const { svc, jejak, dapatPc, matikanPcOtomatis } = harness({ teknisiAktif: true });
+
+    await periksa(svc);
+
+    expect(matikanPcOtomatis).not.toHaveBeenCalled();
+    expect(jejak).not.toContain('matikanPcOtomatis(pc-1)');
+    expect(dapatPc().terakhirAktifAt).not.toBeNull();
+  });
+
+  it('sesi teknisi dicek SETELAH sesi pelanggan, sebelum mengirim', async () => {
+    const { svc, jejak } = harness({ teknisiAktif: true });
+
+    await periksa(svc);
+
+    const posisiSesi = jejak.indexOf('session.findFirst');
+    const posisiTeknisi = jejak.indexOf('teknisi.adaSesiAktifUntukPc(pc-1)');
+    expect(posisiSesi).toBeGreaterThanOrEqual(0);
+    expect(posisiTeknisi).toBeGreaterThan(posisiSesi);
+    expect(jejak).not.toContain('matikanPcOtomatis(pc-1)');
+  });
+
+  it('tanpa sesi teknisi -> pemeriksaan tetap jalan dan PC boleh dimatikan', async () => {
+    const { svc, jejak } = harness({ teknisiAktif: false });
+
+    await periksa(svc);
+
+    // Dijaga supaya pengaman di atas tidak berubah jadi "selalu lewati".
+    expect(jejak).toContain('teknisi.adaSesiAktifUntukPc(pc-1)');
+    expect(jejak).toContain('matikanPcOtomatis(pc-1)');
   });
 
   it('sesi berjalan -> pengecekan sesi SELALU dilakukan sebelum mengirim', async () => {

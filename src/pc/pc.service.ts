@@ -43,6 +43,24 @@ export class PcService {
    * Ketiganya dibungkus try/catch terpisah: pengubahan nama tidak boleh gagal
    * hanya karena salah satu #'ya tidak berhasil.
    */
+  /**
+   * Ubah daya listrik PC (watt).
+   *
+   * ⚠️ Hanya kolom `watt`. Tidak menyentuh sesi, agent, atau `agentToken`,
+   * jadi boleh diubah pada PC yang sedang dipakai pelanggan.
+   *
+   * Divalidasi ulang di sini bukan hanya di DTO, karena angkanya ikut jadi
+   * biaya — DTO bisa berubah, dan angka 0 akan membuat kWh selalu nol tanpa
+   * error apa pun (pembagian nol tidak terjadi, hasilnya 0 yang terlihat benar).
+   */
+  async setWatt(id: string, watt: number): Promise<{ id: string; watt: number }> {
+    if (!Number.isInteger(watt) || watt < 1 || watt > 1000) {
+      throw new BadRequestException('Daya harus antara 1 dan 1000 watt');
+    }
+    await this.prisma.pc.update({ where: { id }, data: { watt } });
+    return { id, watt };
+  }
+
   async gantiNama(id: string, dto: GantiNamaPcDto): Promise<{ id: string; namaPc: string }> {
     const namaPc = dto.namaPc.trim();
     // ⚠️ Validasi diulang SETELAH trim. `@IsNotEmpty()` hanya menolak string

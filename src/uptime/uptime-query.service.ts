@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { tanggalWib } from '../common/wib-date.js';
+import { hitungKwh, hitungRupiah, tarifDariSetting, wattDariPc } from './listrik.js';
 
 export interface UptimePerHari {
   tanggal: string;
@@ -12,7 +13,23 @@ export interface UptimePc {
   namaPc: string;
   /** Total heartbeat yang diterima dalam rentang yang diminta, dalam detik. */
   detik: number;
+  /** Daya PC dalam watt — sumber angka kWh di bawah. */
+  watt: number;
+  /** Estimasi energi listrik untuk PC ini dalam rentang, dalam kWh. */
+  kwh: number;
+  /** Estimasi biaya listrik dalam rupiah (kWh x tarif). */
+  rupiah: number;
   perHari: UptimePerHari[];
+}
+
+export interface RingkasanListrik {
+  /** Tarif per kWh yang dipakai, dibaca dari `Setting.harga_per_kwh`. */
+  tarifPerKwh: number;
+  totalDetik: number;
+  totalKwh: number;
+  totalRupiah: number;
+  /** Total watt PC yang ikut dihitung — deninator untuk kWh rata-rata. */
+  totalWatt: number;
 }
 
 export interface UptimeRingkasan {
@@ -22,6 +39,7 @@ export interface UptimeRingkasan {
    *  hopping Restricted: hari tanpa data tetap punya titik di sumbu X. */
   tanggal: string[];
   pcs: UptimePc[];
+  listrik: RingkasanListrik;
 }
 
 const MAKS_HARI = 366;
@@ -46,9 +64,17 @@ export class UptimeQueryService {
     // dashboard, halaman login, dan aplikasi mobile.
     const pcs = await this.prisma.pc.findMany({
       where: { rusak: false },
-      select: { id: true, namaPc: true },
+      select: { id: true, namaPc: true, watt: true },
       orderBy: { namaPc: 'asc' },
     });
+
+    // ⚠️ Tarif dibaca dari `Setting` TIAP permintaan, bukan di-cache, supaya
+    // admin bisa memperbaruinya dan angka di laporan langsung benar pada
+    // render berikutnya. Tarif ditinjau tiap kuartal, jadi cache di sini bisa
+    // bertahan berbulan-bulan menampilkan biaya yang salah.
+    const tarifPerKwh = tarifDariSetting(
+      (await this.prisma.setting.findUnique({ where: { key: 'harga_per_kwh' } }))?.value,
+    );
 
     const baris = await this.prisma.uptimePc.findMany({
       where: { tanggal: { gte: awal, lte: akhir } },
@@ -77,15 +103,59 @@ export class UptimeQueryService {
       pcs: pcs.map((pc) => {
         const m = perPc.get(pc.id) ?? new Map<string, number>();
         const perHari = tanggal.map((t) => ({ tanggal: t, detik: m.get(t) ?? 0 }));
+        const detik = perHari.reduce((jumlah, h) => jumlah + h.detik, 0);
+        const watt = wattDariPc(pc.watt);
+        const kwh = hitungKwh(detik, watt);
         return {
           id: pc.id,
           namaPc: pc.namaPc,
-          detik: perHari.reduce((jumlah, h) => jumlah + h.detik, 0),
+          detik,
+          watt,
+          kwh,
+          rupiah: hitungRupiah(kwh, tarifPerKwh),
           perHari,
         };
       }),
+      listrik: hitungTotal(pcs.map((pc) => {
+        const m = perPc.get(pc.id) ?? new Map<string, number>();
+        const detik = tanggal.reduce((jumlah, t) => jumlah + (m.get(t) ?? 0), 0);
+        return { watt: wattDariPc(pc.watt), detik };
+      }), tarifPerKwh),
     };
   }
+}
+
+/**
+ * Total energi & biaya.
+ *
+ * ⚠️ Dijumlahkan per PC dari kWh masing-masing, bukan dari
+ * `sum(detik) x satu watt`. Menghitung `totalDetik x wattPerPc` hanya benar
+ * kalau semua PC sama dayanya, dan tidak ada jaminan begitu. Jumlahkan kWh
+ * per PC lalu jumlahkan itu.
+ *
+ * Pembulatan kWh dilakukan DI AKHIR, bukan per PC: membulatkan 0,0117 menjadi
+ * 0,01 untuk 20 PC menghasilkan selisih yang jauh lebih besar daripada
+ * pembulatan yang dimaksud.
+ */
+function hitungTotal(
+  perPc: { watt: number; detik: number }[],
+  tarifPerKwh: number,
+): RingkasanListrik {
+  let totalDetik = 0;
+  let totalKwh = 0;
+  let totalWatt = 0;
+  for (const p of perPc) {
+    totalDetik += p.detik;
+    totalWatt += p.watt;
+    totalKwh += hitungKwh(p.detik, p.watt);
+  }
+  return {
+    tarifPerKwh,
+    totalDetik,
+    totalKwh,
+    totalRupiah: hitungRupiah(totalKwh, tarifPerKwh),
+    totalWatt,
+  };
 }
 
 /**

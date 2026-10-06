@@ -90,6 +90,15 @@ model Pc {
   rusak            Boolean  @default(false)
   alasanRusak      String?
 
+  // ⚠️ Daya listrik PC dalam WATT, dipakai untuk estimasi biaya listrik di
+  // laporan uptime. BUKAN kapasitas VA di meter — 2.200 VA itu kapasitas
+  // sambungan, sedangkan satu PC hanya menarik 150-300 W.
+  //
+  // ⚠️ Default 150 W dipilih karena itu daya PC warnet lama/menengah yang
+  // paling sering. PC dengan GPU berat bisa 300 W, jadi angka ini WAJIB bisa
+  // diubah per PC lewat halaman PC Management.
+  watt             Int      @default(150)
+
   // ⚠️ Kapan PC ini terakhir kali "dipakai". Dipakai untuk menghitung
   // hitung mundur auto-matikan: PC idle selama `Setting.auto_shutdown_menit`
   // menit dimatikan otomatis.
@@ -159,6 +168,49 @@ model Account {
   lastUsedAt     DateTime?
   sessions       Session[]
   transactions   Transaction[]
+}
+
+/// Akun teknisi: bisa membuka layar kunci PC CLIENT tanpa waktu dan tanpa
+/// billing. Berdiri sendiri dari `Account` — bukan voucher dan bukan member.
+///
+/// ⚠️ Kenapa tabel terpisah, bukan `Account` dengan tipe baru:
+///   1. `Account` selalu menghasilkan `Transaction` dan `Session` yang ikut rekap
+///      pendapatan. Teknisi justru harus TIDAK masuk hitungan itu.
+///   2. `Account.nama` adalah kredensial login pelanggan dan ikut tampil di
+///      daftar akun — tidak pantas dipakai untuk kredensial teknisi.
+///   3. Satu akun saja, jadi `username` unik tanpa relasi apa pun.
+model Teknisi {
+  id           String   @id @default(uuid())
+  username     String   @unique
+  passwordHash String
+  /// Sakelar utama. Dimatikan dari halaman admin kalau PIN bocor —
+  /// tanpa perlu menghapus akun, jadi bisa dinyalakan lagi.
+  aktif        Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+/// Jejak akses teknisi yang sedang berjalan.
+///
+/// ⚠️ Sengaja TIDAK memakai tabel `Session`:
+///   - `Session.accountId` punya FK `RESTRICT` ke `Account` yang tidak boleh
+///     null, jadi sesi teknisi akan memaksa perubahan skema pada jalur yang
+///     sedang menagih pelanggan.
+///   - `Session` ikut dihitung sebagai `totalLogin` di laporan harian, dan
+///     itu persis yang tidak boleh terjadi untuk teknisi.
+///
+/// Disimpan di database, bukan memory, karena indikator "ada teknisi di PC"
+/// di dashboard harus tetap jujur setelah server restart.
+model SesiTeknisi {
+  id        String    @id @default(uuid())
+  pcId      String
+  username  String
+  mulaiAt   DateTime  @default(now())
+  /// `null` = masih berjalan. Baris yang sudah selesai dibersihkan berkala.
+  selesaiAt DateTime?
+
+  @@index([pcId])
+  @@index([username])
 }
 
 model Session {

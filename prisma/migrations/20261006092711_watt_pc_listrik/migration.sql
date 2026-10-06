@@ -1,0 +1,2 @@
+-- AlterTable
+ALTER TABLE "Pc" ADD COLUMN     "watt" INTEGER NOT NULL DEFAULT 150;

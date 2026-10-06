@@ -3,6 +3,7 @@ import { PcService } from './pc.service.js';
 import { SessionService } from '../session/session.service.js';
 import { CreatePcDto } from './dto/create-pc.dto.js';
 import { GantiNamaPcDto } from './dto/ganti-nama-pc.dto.js';
+import { SetWattPcDto } from './dto/set-watt-pc.dto.js';
 import { SetRusakPcDto } from './dto/set-rusak-pc.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
@@ -74,6 +75,19 @@ export class PcController {
    * pelanggan — sesi, agent, dan token tidak tersentuh. Lihat catatan panjang
    * di `PcService.gantiNama()`.
    */
+  /**
+   * Ubah daya listrik PC (watt), dipakai untuk estimasi biaya listrik di
+   * laporan uptime.
+   *
+   * ⚠️ ADMIN saja — angka ini jadi_acuan biaya, jadi kasir tidak boleh
+   * bebas mengubahnya tanpa sengaja.
+   */
+  @Patch(':id/watt')
+  @Roles(Role.ADMIN)
+  async setWatt(@Param('id') id: string, @Body() dto: SetWattPcDto) {
+    return this.pcService.setWatt(id, dto.watt);
+  }
+
   @Patch(':id/nama')
   @Roles(Role.ADMIN)
   async gantiNama(@Param('id') id: string, @Body() dto: GantiNamaPcDto) {

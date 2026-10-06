@@ -6,6 +6,7 @@ import { PrismaModule } from '../prisma/prisma.module.js';
 import { ActivityLogModule } from '../activity-log/activity-log.module.js';
 import { NotifikasiModule } from '../notifikasi/notifikasi.module.js';
 import { LogBillingModule } from '../log-billing/log-billing.module.js';
+import { TeknisiService } from './teknisi.service.js';
 
 @Module({
   imports: [
@@ -17,7 +18,9 @@ import { LogBillingModule } from '../log-billing/log-billing.module.js';
       secret: process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-in-production',
     }),
   ],
-  providers: [SessionGateway, SessionService],
-  exports: [SessionService, SessionGateway],
+  providers: [SessionGateway, SessionService, TeknisiService],
+  // `TeknisiService` di-export supaya `TeknisiController` (module terpisah)
+  // bisa memakainya tanpa mengimpor `SessionModule` — yang akan jadi siklus.
+  exports: [SessionService, SessionGateway, TeknisiService],
 })
 export class SessionModule {}

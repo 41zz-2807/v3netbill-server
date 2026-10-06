@@ -18,6 +18,7 @@ import { ActivityLogService } from '../activity-log/activity-log.service.js';
 import { NotifikasiService } from '../notifikasi/notifikasi.service.js';
 import { LogBillingService } from '../log-billing/log-billing.service.js';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { TeknisiService } from './teknisi.service.js';
 import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY } from '../settings/otp-keys.js';
 import {
   NEXTCLOUD_URL_KEY,
@@ -35,6 +36,19 @@ const NEXTCLOUD_KEYS_DI_GATEWAY = [
   NEXTCLOUD_PASSWORD_KEY,
   NEXTCLOUD_FOLDER_KEY,
 ];
+
+/**
+ * Durasi yang dikirim ke agent saat teknisi login.
+ *
+ * ⚠️ Angka ini TIDAK adalah waktu yang dibeli — tidak ada tagihan, tidak ada
+ * `Account`, tidak ada sisa waktu yang berkurang di database. Agent memakai
+ * `SisaDetik` hanya sebagai syarat "layar kunci terbuka" (`SisaDetik > 0`),
+ * jadi angkanya hanya perlu cukup besar supaya tidak pernah menyentuh nol
+ * selama perbaikan. Bisa diperkecil tanpa efek ke billing, tapi jangan diubah
+ * tanpa alasan: kalau terlalu kecil, PC teknisi terkunci sendiri di tengah
+ * perbaikan.
+ */
+const DURASI_TEKNISI_DETIK = 12 * 60 * 60; // 12 jam
 
 @WebSocketGateway({
   cors: {
@@ -58,6 +72,13 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     private prisma: PrismaService,
     private notifikasiService: NotifikasiService,
     private logBilling: LogBillingService,
+    /**
+     * Opsional supaya tes lama yang memanggil `new SessionGateway(...)` dengan
+     * enam argumen tidak ikut patah. Tanpa service ini, `cobaLoginTeknisi()`
+     * selalu mengembalikan `false` dan perilakunya persis seperti sebelum
+     * fitur ini ada.
+     */
+    private teknisiService?: TeknisiService,
   ) {}
 
   afterInit(server: Server): void {
@@ -154,6 +175,173 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       // Level warn, bukan error: agent tetap terdaftar dan tetap jalan, hanya
       // tidak menerima info sesi sampai tick berikutnya (maksimal 1 detik).
       this.logger.warn(`Gagal mengirim ulang sesi ke agent ${pcId}: ${pesan}`);
+    }
+  }
+
+  /**
+   * Coba login teknisi. Mengembalikan `true` kalau request ini memang
+   * untuk teknisi (berhasil atau ditolak) — jadi pemanggil tahu jangan
+   * melanjutkan ke login akun pelanggan.
+   *
+   * ⚠️ Definisi "request untuk teknisi" harus BEDA dari "kode teknisi benar".
+   * Kalau kode tidak cocok dengan akun teknisi, fungsi ini mengembalikan
+   * `false` dan login diteruskan sebagai akun pelanggan — supaya kode yang
+   * kebetulan sama tidak membuat dua meanings.
+   *
+   * Kenapa tidak membuat baris `Session`: `Session.accountId` punya FK
+   * `RESTRICT` yang tidak boleh null, dan `Session` ikut dihitung sebagai
+   * `totalLogin` di laporan harian. Yang perlu dari server hanyalah "PC ini
+   * sedang dipakai teknisi" — cukup satu baris di `SesiTeknisi`.
+   */
+  private async cobaLoginTeknisi(
+    pcId: string,
+    kredensial: { kode?: string; kodeUnik?: string; nama?: string; password: string },
+  ): Promise<boolean> {
+    const kode = (kredensial.kode ?? kredensial.kodeUnik ?? kredensial.nama ?? '').trim();
+    if (!kode) {
+      return false;
+    }
+
+    // Cheap filter dulu: hanya username teknisi yang sedang tried. Tanpa ini
+    // setiap login pelanggan akan kena satu query bcrypt.
+    const namaTeknisi = await this.teknisiService?.namaTeknisiAktif();
+    if (!namaTeknisi || !namaTeknisi.includes(kode)) {
+      return false;
+    }
+
+    const hasil = await this.teknisiService!.verifikasiLogin(kode, kredensial.password);
+    if (!hasil) {
+      // ⚠️ Balasan WAJIB dikirim, kalau tidak kartu login di PC hanya diam dan
+      // teknisi menekan tombol berulang tanpa tahu kenapa.
+      //
+      // Pesannya PERSIS sama dengan yang muncul untuk akun biasa yang tidak
+      // ketemu. Kalau "kode dikenal tapi PIN salah" dibedakan dari "kode tidak
+      // dikenal", orang yang menebak di PC client bisa memetakan kode teknisi
+      // mana yang terdaftar — dan kode itu sudah setengah dari kredensial.
+      this.logger.warn(`Login teknisi ditolak di PC ${pcId}`);
+      this.emitLoginGagal(pcId, 'Akun tidak ditemukan');
+      return true;
+    }
+
+    // PC sedang dipakai -> tolak. Kalau tidak, ada dua orang dalam satu PC:
+    // pelanggan yang ditagih dan teknisi yang membongkar.
+    const sesiBerjalan = await this.sessionService.sesiBerjalanId(pcId);
+    if (sesiBerjalan) {
+      this.logger.warn(`Login teknisi ditolak di PC ${pcId}: ada sesi pelanggan berjalan`);
+      this.emitLoginGagal(pcId, 'PC sedang dipakai');
+      return true;
+    }
+
+    // PC ditandai rusak tidak boleh dipakai, sama seperti akun biasa. Tanpa
+    // cek ini teknisi bisa membuka PC yang sengaja disingkirkan dari dashboard.
+    const pc = await this.prisma.pc.findUnique({
+      where: { id: pcId },
+      select: { rusak: true },
+    });
+    if (!pc || pc.rusak) {
+      this.logger.warn(`Login teknisi ditolak di PC ${pcId}: PC ditandai rusak`);
+      this.emitLoginGagal(pcId, 'PC sedang tidak tersedia');
+      return true;
+    }
+
+    // Bersihkan sisa sesi teknisi lama di PC ini supaya tidak ada dua baris
+    // terbuka (mis. teknisi sebelumnya keluar tanpa sempat logout).
+    await this.teknisiService!.selesaiSesi(pcId);
+    await this.teknisiService!.mulaiSesi(pcId, hasil.username);
+
+    this.logger.log(`TEKNISI ${hasil.username} login di PC ${pcId}`);
+
+    const sessionId = `teknisi-${Date.now()}`;
+    // ⚠️ `client:login_result` WAJIB dikirim, sama seperti login akun biasa.
+    // Worker meneruskannya ke overlay, dan `HandleLoginResult` yang saat sukses
+    // itu yang memanggil `RequestStateAsync()` serta menyembunyikan teks galat
+    // di kartu login. Tanpa baris ini, overlay sudah terbuka tapi kartu login
+    // masih menampilkan sisa pesan "gagal" dari percobaan sebelumnya.
+    const socketId = this.pcSocketMap.get(pcId);
+    if (socketId) {
+      this.server.to(socketId).emit('client:login_result', { success: true, sessionId });
+    }
+
+    // Dipakai `session:start` supaya overlay terbuka (syaratnya
+    // `SisaDetik > 0` di MainWindow.xaml.cs), TAPI tidak lewat
+    // `sessionService.loginRequest()` — jadi tidak ada `Session` di database.
+    // `sessionId` sintetis karena tidak ada baris Session sebagai rujukan.
+    this.emitSessionStart(pcId, sessionId, DURASI_TEKNISI_DETIK, {
+      kodeUnik: null,
+      nama: `Teknisi ${hasil.username}`,
+      tipe: 'MEMBER',
+    });
+    this.broadcastActivityLog('teknisi:login', {
+      pcId,
+      teknisi: hasil.username,
+      keterangan: `login teknisi ${hasil.username}`,
+    });
+    await this.broadcastPcUpdate();
+    return true;
+  }
+
+  /**
+   * Kunci setiap PC yang sedang dipakai teknisi.
+   *
+   * ⚠️ Dipakai saat sakelar akses teknisi dimatikan. Menolak login baru saja
+   * TIDAK cukup: kalau PIN bocor, teknisi yang sedang di dalam PC harus
+   * dikeluarkan sekarang juga, bukan nanti.
+   *
+   * Pakai `admin:lock`, bukan `session:stop`. Perbedaannya penting:
+   * `admin:lock` hanya mengunci layar di sisi agent dan tidak menyentuh
+   * database — persis yang dibutuhkan, karena sesi teknisi memang tidak pernah
+   * ada baris `Session` untuk dihentikan.
+   *
+   * ⚠️ Daftar PC harus diteruskan dari pemanggil. Versi pertama mencarinya sendiri
+   * lewat `semuaSesiAktif()`, padahal `setAktif()` sudah menutup sesi lebih
+   * dulu — hasilnya nol PC terkunci tanpa satu pun error.
+   *
+   * Mengembalikan berapa PC yang benar-benar terkunci. PC yang agentnya offline
+   * tidak bisa dikunci dan TIDAK dihitung, supaya angkanya tidak berbohong.
+   */
+  async kunciSemuaPcTeknisi(pcIds: string[]): Promise<number> {
+    return this.kunciSebagianPcTeknisi(pcIds);
+  }
+
+  /**
+   * Kunci daftar PC tertentu dengan alasan teknisi.
+   *
+   * Dipisah dari `kunciSemuaPcTeknisi()` karena pemanggilnya sudah punya
+   * daftarnya sendiri: saat sakelar dimatikan, daftarnya dari `setAktif()`;
+   * saat akun dihapus, daftarnya hanya PC milik teknisi itu. Duplikasi logika
+   * penguncian di dua tempat berisikootiPrices Behaviour berbeda.
+   */
+  async kunciSebagianPcTeknisi(pcIds: string[]): Promise<number> {
+    try {
+      if (pcIds.length === 0) {
+        return 0;
+      }
+      let terkunci = 0;
+      for (const pcId of pcIds) {
+        const socketId = this.pcSocketMap.get(pcId);
+        if (!socketId) {
+          this.logger.warn(
+            `PC teknisi ${pcId} tidak bisa dikunci: agent tidak tersambung. ` +
+              'PC itu akan terkunci sendiri saat layarnya disentuh.',
+          );
+          continue;
+        }
+        this.server.to(socketId).emit('admin:lock', { pcId });
+        terkunci++;
+        this.logger.log(`PC ${pcId} dikunci karena akses teknisi ditutup`);
+      }
+      return terkunci;
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      this.logger.error(`Gagal mengunci PC teknisi: ${pesan}`);
+      return 0;
+    }
+  }
+
+  private emitLoginGagal(pcId: string, pesan: string): void {
+    const socketId = this.pcSocketMap.get(pcId);
+    if (socketId) {
+      this.server.to(socketId).emit('client:login_result', { success: false, message: pesan });
     }
   }
 
@@ -431,6 +619,21 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
         client.emit('client:login_result', { success: false, message: 'PC not registered' });
         return;
       }
+    }
+
+    // ⚠️ TEKNISI dicoba PERTAHAMA, sebelum pencarian `Account`.
+    //
+    // Urutannya penting: kalau technisi dicek setelah `loginRequest()`, kode
+    // `teknisi` akan lebih dulu dicocokkan ke `Account.nama`. Dan `Account.nama`
+    // adalah kredensial login pelanggan — jadi nama yang sama untuk teknisi dan
+    // pelanggan membuat keduanya bisa saling membuka. `simpanAkun()` menolak
+    // nama yang bentrok, dan urutannya di sini adalah lapis kedua.
+    //
+    // Sesi teknisi TIDAK membuat baris `Session` dan TIDAK membuat
+    // `Transaction`, jadi tidak masuk `totalLogin` maupun pendapatan laporan.
+    const loginTeknisi = await this.cobaLoginTeknisi(pcId, kredensial);
+    if (loginTeknisi) {
+      return;
     }
 
     const result = await this.sessionService.loginRequest(pcId, kredensial);

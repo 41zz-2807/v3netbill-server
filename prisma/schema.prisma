@@ -106,6 +106,45 @@ model Pc {
   terakhirAktifAt  DateTime?
 
   sessions         Session[]
+  uptime           UptimePc[]
+}
+
+/// Berapa lama tiap PC menyala, dihitung dari heartbeat.
+///
+/// ⚠️ 1 BARIS PER PC PER HARI, bukan 1 baris per heartbeat atau per menit.
+/// Itu pilihan yang disengaja: 7 PC = 7 baris/hari (sekitar 5 MB/tahun),
+/// sementara menyimpan tiap heartbeat mentah bisa 40.320 baris/hari
+/// (sekitar 1,5 GB/tahun) untuk jawaban yang sama saja.
+///
+/// ⚠️ `dihitungSampai` itu yang membuat penghitungan ini BENAR. Tanpa kolom
+/// ini, cara paling naif `detikOnline += 60` setiap tick akan salah besar:
+/// cron yang jalan dua kali atau backend yang restart akan menghitung
+/// période yang sama berulang kali. Dengan watermark, yang dihitung hanya
+/// selisih sejak tick terakhir yang berhasil — jadi tick kedua menambah ~0.
+///
+/// `null` berarti PC tidak ada di tabel itu, dan itu disengaja: tabel ini
+/// hanya berisi PC yang punya catatan, bukan satu baris untuk setiap PC
+/// setiap hari.
+model UptimePc {
+  pcId String
+
+  /// Tanggal dalam zona WIB, disimpan sebagai DATE.
+  tanggal DateTime @db.Date
+
+  /// Total heartbeat yang diterima, dalam detik. Maksimal 86.400 (=24 jam).
+  detikOnline Int @default(0)
+
+  /// Watermark: sudah dihitung sampai detik berapa.
+  ///
+  /// Seiring PC offline, watermark tetap dimajukan TANPA menambah
+  /// `detikOnline` — itulah yang membuat jeda offline tidak ikut terhitung
+  /// sebagai uptime.
+  dihitungSampai DateTime
+
+  pcs Pc @relation(fields: [pcId], references: [id], onDelete: Cascade)
+
+  @@id([pcId, tanggal])
+  @@index([tanggal])
 }
 
 model Account {

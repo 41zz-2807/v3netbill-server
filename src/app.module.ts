@@ -11,6 +11,7 @@ import { AccountsModule } from './accounts/accounts.module.js';
 import { TransactionsModule } from './transactions/transactions.module.js';
 import { SessionModule } from './session/session.module.js';
 import { ReportsModule } from './reports/reports.module.js';
+import { UptimeModule } from './uptime/uptime.module.js';
 import { SettingsModule } from './settings/settings.module.js';
 import { LaporanModule } from './laporan/laporan.module.js';
 import { ActivityLogModule } from './activity-log/activity-log.module.js';
@@ -34,6 +35,7 @@ import { RolesGuard } from './common/guards/roles.guard.js';
     TransactionsModule,
     SessionModule,
     ReportsModule,
+    UptimeModule,
     SettingsModule,
     LaporanModule,
     ActivityLogModule,

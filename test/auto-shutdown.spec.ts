@@ -66,6 +66,7 @@ function harness({
   const jejak: string[] = [];
   const log: Array<{ event: string; payload: Record<string, unknown> }> = [];
 
+  const panggilUpdateMany = vi.fn(async () => ({ count: 0 }));
   const matikanPcOtomatis = vi.fn(async (pcId: string) => {
     jejak.push(`matikanPcOtomatis(${pcId})`);
     return agentKonek;
@@ -78,6 +79,7 @@ function harness({
         findUnique: async () => ({ key: 'auto_shutdown_menit', value: setting }),
       },
       pc: {
+        updateMany: panggilUpdateMany,
         findMany: async (args?: { where?: { rusak?: boolean; terakhirAktifAt?: { lte: Date } | null } }) => {
           jejak.push('pc.findMany');
           // Mock WAJIB meniru filter Prisma, kalau tidak pengaman `rusak` dan
@@ -128,8 +130,17 @@ function harness({
   };
   svc.setGatewayEvents(events as never);
 
-  return { svc, jejak, log, dapatPc: () => barisPc, matikanPcOtomatis, events };
+  return {
+    svc,
+    jejak,
+    log,
+    dapatPc: () => barisPc,
+    matikanPcOtomatis,
+    events,
+    panggilUpdateMany,
+  };
 }
+
 
 /** Jalankan pemeriksa lewat nama private-nya, satu tick. */
 const periksa = async (svc: SessionService) =>
@@ -274,5 +285,46 @@ describe('hitung mundur di dashboard', () => {
   it('fitur dimatikan (0 menit) -> null walau timer menyala', () => {
     const { svc } = harness({ setting: '0' });
     expect(sisa(svc, new Date(SEKARANG.getTime()), '0')).toBeNull();
+  });
+});
+
+describe('senyapkanTimerPCKosong — menutuplubang PC yang timer-nya kosong', () => {
+  // ⚠️ Lubang ini nyata dan gejalanya diam-diam: kolom `terakhirAktifAt`
+  // ditambahkan lewat migrasi, jadi PC yang SAAT ITU sudah tersambung punya
+  // nilainya kosong. `registerPc()` hanya jalan saat agent konek ulang — kalau
+  // socket PC itu tetap hidup, PC itu tidak akan pernah punya timer dan tidak
+  // akan pernah dimatikan otomatis. Tanpa error, tanpa warning.
+  it('timer kosong + agent sehat + tanpa sesi -> dinyalakan', async () => {
+    const { svc, panggilUpdateMany } = harness();
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (svc as any).senyapkanTimerPCKosong();
+
+    expect(panggilUpdateMany).toHaveBeenCalledTimes(1);
+    const where = panggilUpdateMany.mock.calls[0][0].where;
+    expect(where.rusak).toBe(false);
+    expect(where.terakhirAktifAt).toBeNull();
+    // Syarat "tanpa sesi" WAJIB ada. Tanpa itu PC yang sedang dipakai pelanggan
+    // bisa mendapat hitung mundur — dan itu persis yang harus dihindari.
+    expect(where.sessions).toEqual({ none: { status: SessionStatus.BERJALAN } });
+    expect(where.lastHeartbeatAt).toBeDefined();
+  });
+
+  it('hanya satu query updateMany untuk semua PC', async () => {
+    // Kalau satu query per PC, checker tiap 10 detik jadi 7 query sia-sia.
+    const { svc, panggilUpdateMany } = harness();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await (svc as any).senyapkanTimerPCKosong();
+    expect(panggilUpdateMany).toHaveBeenCalledTimes(1);
+  });
+
+  it('galat database tidak boleh menjatuhkan pemeriksa', async () => {
+    // Fungsi ini dipanggil dari setInterval. Tanpa try/catch, satu error jadi
+    // unhandled rejection yang menjatuhkan SELURUH proses server.
+    const { svc, panggilUpdateMany } = harness();
+    panggilUpdateMany.mockRejectedValueOnce(new Error('koneksi database putus'));
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect((svc as any).senyapkanTimerPCKosong()).resolves.toBeUndefined();
   });
 });

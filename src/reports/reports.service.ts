@@ -188,6 +188,69 @@ export class ReportsService {
     });
   }
 
+  /**
+   * Ringkasan saja untuk laporan tutup hari — tanpa daftar transaksi.
+   *
+   * ⚠️ Dipisah dari `laporanTutupHari()` (4 Okt). PDF yang dikirim jam 23:30
+   * tidak lagi memuat tabel rincian transaksi, jadi query `transaction.findMany`
+   * di sana tidak perlu dijalankan sama sekali — cukup `computeDaily()` yang
+   * sudah menghitung seluruh angkanya.
+   */
+  /**
+ * Data untuk PDF laporan tutup hari: ringkasan hari yang dilaporkan,
+ * ditambah 5 hari terakhir untuk perbandingan.
+ *
+ * ⚠️ `Jumlah_hari_bandingkan` = 5 berarti 4 hari SEBELUM hari laporan.
+ * Hari laporan sendiri sudah ada di `aggregate`, jadi total baris tabel
+ * perbandingan = 5 (bukan 6). Kalau suatu saat diubah, Ensure tabelnya
+ * masih muat satu halaman — sudah pernah 79 halaman sebelum tabel rincian
+ * dihapus.
+ */
+  private static readonly JUMLAH_HARI_BANDINGKAN = 5;
+
+async laporanTutupHariLengkap(): Promise<{
+    tanggal: string;
+    aggregate: DailyReportAggregate;
+    pembanding: DailyReportAggregate[];
+  }> {
+    const tanggal = this.formatTanggal(
+      new Date(this.parseTanggal(this.formatTanggal(this.hariIniBaseUtc())).getTime() - DAY_MS),
+    );
+
+    // Mundur 4 hari dari hari laporan, lalu `getRange` mengembalikan 5 hari
+    // inklusif. Urutannya dibalik supaya hari paling lama muncul paling atas
+    // dan hari laporan di paling bawah — jadi matanya bergerak dari riwayat ke
+    // hari ini.
+    const akhir = this.parseTanggal(tanggal);
+    const mulai = new Date(
+      akhir.getTime() - (ReportsService.JUMLAH_HARI_BANDINGKAN - 1) * DAY_MS,
+    );
+    const range = await this.getRange({
+      dari: this.formatTanggal(mulai),
+      sampai: tanggal,
+    } as ReportsQueryDto);
+
+    return {
+      tanggal,
+      aggregate: await this.computeDaily(tanggal),
+      // `getRange` sudah mengurutkan dari `buildRange`; apa adanya sudah
+      // kronologis naik, tapi dicek ulang supaya tidak bergantung pada detail
+      // internal `buildRange`.
+      pembanding: [...range.daftar].sort((a, b) => a.tanggal.localeCompare(b.tanggal)),
+    };
+  }
+
+  async laporanTutupHariRingkas(): Promise<{
+    tanggal: string;
+    aggregate: DailyReportAggregate;
+  }> {
+    const tanggal = this.formatTanggal(
+      new Date(this.parseTanggal(this.formatTanggal(this.hariIniBaseUtc())).getTime() - DAY_MS),
+    );
+    const aggregate = await this.computeDaily(tanggal);
+    return { tanggal, aggregate };
+  }
+
   async laporanTutupHari(): Promise<{
     tanggal: string;
     aggregate: DailyReportAggregate;

@@ -1085,6 +1085,7 @@ async autoShutdownMenit(): Promise<number> {
         return;
       }
       const batas = new Date(Date.now() - menit * 60 * 1000);
+      await this.senyapkanTimerPCKosong();
       const kandidat = await this.prisma.pc.findMany({
         where: {
           rusak: false,
@@ -1131,6 +1132,50 @@ async autoShutdownMenit(): Promise<number> {
       await this.gatewayEvents?.broadcastPcUpdate();
     } catch (e) {
       this.logger.warn(`Pemeriksaan auto-matikan gagal: ${(e as Error).message}`);
+    }
+  }
+
+  /**
+   * Nyalakan timer untuk PC yang masih `terakhirAktifAt = null`.
+   *
+   * ⚠️ Kenapa ini perlu ada, dan kenapa tidak bisa cuma di `registerPc()`:
+   * kolom ini ditambahkan lewat migrasi, jadi semua PC yang saat itu **sudah
+   * tersambung** punya nilainya kosong — dan `registerPc()` hanya berjalan
+   * saat agent konek ulang. Kalau socket PC itu tetap hidup berhari-hari
+   * tanpa putus, PC itu tidak akan pernah punya timer, sehingga tidak akan
+   * pernah dimatikan otomatis sama sekali.
+   *
+   * Gejalanya halus: tidak ada error, tidak ada warning, hanya "kadang
+   * PC yang sudah lama nyala tidak mau mati sendiri".
+   *
+   * Syaratnya dibuat ketat supaya tidak menyalakan timer di tempat yang
+   * seharusnya kosong:
+   * - `rusak: false` — PC yang ditandai tidak dimatikan, jadi tidak perlu timer.
+   * - `lastHeartbeatAt` segar — hanya PC yang agentnya benar-benar hidup.
+   * - `sessions: none` — PC yang sedang dipakai pelanggan tidak boleh punya
+   *   hitung mundur. Sesi yang berakhir akan menyalakanya lewat `stopSession()`.
+   *
+   * Dipakai `updateMany` supaya cukup satu query per 10 detik untuk semua PC,
+   * bukan satu query per PC.
+   */
+  private async senyapkanTimerPCKosong(): Promise<void> {
+    try {
+      const hasil = await this.prisma.pc.updateMany({
+        where: {
+          rusak: false,
+          terakhirAktifAt: null,
+          lastHeartbeatAt: { gte: new Date(Date.now() - AMBANG_OFFLINE_MS) },
+          sessions: { none: { status: SessionStatus.BERJALAN } },
+        },
+        data: { terakhirAktifAt: new Date() },
+      });
+      if (hasil.count > 0) {
+        this.logger.log(
+          `${hasil.count} PC mendapat timer auto-matikan (t sebelumnya kosong — PC ini sudah konek sebelum kolomnya ada)`,
+        );
+      }
+    } catch (e) {
+      this.logger.warn(`Gagal menyalakan timer PC yang kosong: ${(e as Error).message}`);
     }
   }
 

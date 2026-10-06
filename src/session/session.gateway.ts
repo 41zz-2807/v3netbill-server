@@ -113,6 +113,50 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
   }
 
+  /**
+   * Kirim ulang `session:start` ke agent yang baru (re)connect, kalau PC itu
+   * sedang punya sesi berjalan.
+   *
+   * ⚠️ Ini menutup celah yang TIDAK bisa ditutup dari sisi agent: `_currentState`
+   * di `Worker.cs` diinisialisasi `Locked`, dan tidak ada permintaan state ke
+   * server dari sisi agent (agent hanya kirim `agent:register` +
+   * `agent:heartbeat`). Jadi kalau Windows service di PC klien restart
+   * sementara ada sesi berjalan, layar PC kembali ke form login sementara
+   * server masih terus menagih — pelanggan bisa melihat layar login di PC
+   * yang sedang ditagih, atau menekan login dan ditolak
+   * "PC sudah memiliki sesi berjalan".
+   *
+   * Kenapa TIDAK perlu install MSI baru: handler yang menerimanya sudah ada di
+   * versi yang terpasang (1.0.17.0) dan keduanya idempoten —
+   * `Worker.OnSessionStarted` hanya menimpa field state lalu mengirim ulang
+   * StateUpdate + label akun, dan `Overlay.ApplySessionStarted` hanya menimpa
+   * label akun. Tidak ada penghitung, dialog, atau proses yang di-spawn. Itu
+   * penting karena fungsi ini jalan di SETIAP konek, termasuk kasus biasa
+   * server restart di tengah pelanggan main.
+   *
+   * ⚠️ WAJIB dibungkus `try/catch` dan TIDAK boleh melempar. Pemanggilnya
+   * `registerAgent()`; kalau di sini gagal, agent PC itu tidak boleh gagal
+   * daftar — dan `registerAgent()` juga mendayangkan socket lama milik PC lain
+   * tepat sebelum pemanggilan ini.
+   */
+  private async kirimUlangSesiKeAgent(pcId: string): Promise<void> {
+    try {
+      const sesi = await this.sessionService.sesiBerjalanUntukAgent(pcId);
+      if (!sesi) {
+        return;
+      }
+      this.emitSessionStart(pcId, sesi.sessionId, sesi.sisaDetik, sesi.akun);
+      this.logger.log(
+        `Sesi berjalan dikirim ulang ke agent ${pcId} (sessionId=${sesi.sessionId}, sisa=${sesi.sisaDetik}detik)`,
+      );
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      // Level warn, bukan error: agent tetap terdaftar dan tetap jalan, hanya
+      // tidak menerima info sesi sampai tick berikutnya (maksimal 1 detik).
+      this.logger.warn(`Gagal mengirim ulang sesi ke agent ${pcId}: ${pesan}`);
+    }
+  }
+
   private async registerAgent(client: Socket, pcId: string, agentToken: string): Promise<boolean> {
     const isValid = await this.sessionService.validateAgentToken(pcId, agentToken);
     if (!isValid) {
@@ -142,6 +186,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     // akurat walau PC klien memakai DHCP dan IP-nya berganti.
     const ipTerlihat = this.alamatIp(client);
     await this.sessionService.registerPc(pcId, ipTerlihat);
+    await this.kirimUlangSesiKeAgent(pcId);
     await this.broadcastPcUpdate();
 
     this.logger.log(

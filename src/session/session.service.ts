@@ -94,6 +94,23 @@ export interface SessionGatewayEvents {
  */
 const AUTO_SHUTDOWN_DEFAULT_MENIT = 5;
 
+/**
+ * Sisa waktu sebuah sesi PADA SAAT INI.
+ *
+ * ⚠️ Dipisah ke modul supaya bisa dipakai tanpa `this.` dan bisa diuji
+ * langsung. Rumus yang sama dipakai di tiga tempat (tick 1-detik,
+ * `getSessionStatus()`, dan `sesiBerjalanUntukAgent()`); menyatukannya
+ * mencegah ketiganya melenceng berbeda.
+ */
+export function sisaWaktuSekarang(
+  waktuMulai: Date,
+  saldoDetik: number,
+  sekarangMs: number = Date.now(),
+): number {
+  const elapsedDetik = Math.max(0, Math.floor((sekarangMs - waktuMulai.getTime()) / 1000));
+  return Math.max(0, saldoDetik - elapsedDetik);
+}
+
 @Injectable()
 export class SessionService implements OnModuleDestroy {
   private readonly logger = new Logger(SessionService.name);
@@ -1270,11 +1287,57 @@ async autoShutdownMenit(): Promise<number> {
       return null;
     }
 
-    const elapsedMs = Date.now() - session.waktuMulai.getTime();
-    const elapsedDetik = Math.floor(elapsedMs / 1000);
-    const sisaDetik = Math.max(0, session.account.sisaWaktuDetik - elapsedDetik);
+    return { sisaDetik: sisaWaktuSekarang(session.waktuMulai, session.account.sisaWaktuDetik) };
+  }
 
-    return { sisaDetik };
+  /**
+   * Sesi yang SEDANG BERJALAN pada sebuah PC, lengkap dengan sisa waktu
+   * sekarang dan identitas akunnya.
+   *
+   * Dipakai gateway tepat setelah agent (re)connect untuk mengirim ulang
+   * `session:start`.
+   *
+   * ⚠️ Kenapa ini penting: `_currentState` di `Worker.cs` diinisialisasi
+   * `Locked`, dan TIDAK ADA permintaan state ke server dari sisi agent — agent
+   * hanya mengirim `agent:register` + `agent:heartbeat`. Jadi kalau Windows
+   * service di PC klien restart sementara ada sesi berjalan, layar PC kembali
+   * ke form login sementara server masih terus menagih. Mengirim ulang
+   * `session:start` menutup celah itu **tanpa perlu install MSI baru**,
+   * karena `Worker.OnSessionStarted` dan `Overlay.ApplySessionStarted` sudah
+   * idempoten (keduanya hanya menimpa state, tidak menghitung apa pun).
+   *
+   * Mengembalikan `null` kalau tidak ada sesi berjalan — dengan begitu
+   * pemanggil tidak perlu memeriksa dua kali.
+   */
+  async sesiBerjalanUntukAgent(
+    pcId: string,
+  ): Promise<{
+    sessionId: string;
+    sisaDetik: number;
+    akun: { kodeUnik: string | null; nama: string | null; tipe: string };
+  } | null> {
+    const session = await this.prisma.session.findFirst({
+      where: { pcId, status: SessionStatus.BERJALAN },
+      include: { account: true },
+    });
+
+    if (!session) {
+      return null;
+    }
+
+    return {
+      sessionId: session.id,
+      // ⚠️ WAJIB sisa waktu SEKARANG, bukan durasi saat sesi dimulai.
+      // `OnSessionStarted` menulis `SisaDetik = DurasiDetik`, jadi kalau yang
+      // dikirim durasi awal, hitung mundur di layar melonjak naik sampai tick
+      // berikutnya tiba (maksimal 1 detik) — kasir sempat melihat angka salah.
+      sisaDetik: sisaWaktuSekarang(session.waktuMulai, session.account.sisaWaktuDetik),
+      akun: {
+        kodeUnik: session.account.kodeUnik,
+        nama: session.account.nama,
+        tipe: session.account.tipe,
+      },
+    };
   }
 
   onModuleDestroy(): void {

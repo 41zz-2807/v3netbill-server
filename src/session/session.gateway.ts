@@ -62,7 +62,19 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
 
   afterInit(server: Server): void {
     this.logger.log('SessionGateway initialized');
-    this.sessionService.setGatewayEvents(this);
+    // ⚠️ WAJIB `.catch()`. `setGatewayEvents()` mengembalikan Promise (karena
+    // di dalamnya ada recovery sesi), dan `afterInit` tidak bisa `await`.
+    // Promise yang ditelantarkan tanpa catch menjadi unhandled rejection —
+    // dan Node 20 **menjatuhkan seluruh proses** kalau itu terjadi saat
+    // startup. Akibatnya satu query Prisma yang gagal di sini berarti
+    // seluruh backend tidak start, dan tidak ada satu PC pun yang bisa billing.
+    //
+    // `recoverRunningSessions()` sudah punya try/catch sendiri, jadi catch di
+    // bawah ini adalah jaring kedua, bukan jaring utama.
+    this.sessionService.setGatewayEvents(this).catch((err: unknown) => {
+      const pesan = err instanceof Error ? err.message : String(err);
+      this.logger.error(`setGatewayEvents gagal: ${pesan}`);
+    });
   }
 
   async handleConnection(client: Socket): Promise<void> {

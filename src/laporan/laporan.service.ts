@@ -173,7 +173,6 @@ export class LaporanService {
       const M = 40;
       const W = doc.page.width - M * 2;
       const pageMaxY = doc.page.height - doc.page.margins.bottom;
-      const contentBottom = pageMaxY - 205;
       const bold = 'Helvetica-Bold';
       const reg = 'Helvetica';
       const totalPendapatan = agg.pendapatanVoucher + agg.pendapatanMember;
@@ -184,7 +183,7 @@ export class LaporanService {
       // ⚠️ JANGAN pernah memanggil `footer()` lalu menggambar sesuatu dengan
       // posisi relatif terhadap `doc.y`. `doc.text()` di posisi tetap
       // `fy - 2` (dekat dasar halaman) tetap MEMAKAN kursor `doc.y`, jadi
-      // setelah footer dipanggil, `doc.y` berada di bawah `contentBottom`.
+      // setelah footer dipanggil, `doc.y` berada di bawah batas konten.
       // Laporan tutup hari pernah jadi 79 halaman karena itu: setiap baris
       // tabel memicu `addPage()`, lalu footer()+header()+baris digambar di
       // dasar halaman baru, lalu baris berikutnya memicu `addPage()` lagi.
@@ -198,14 +197,21 @@ export class LaporanService {
           .strokeColor('#e2e8f0')
           .lineWidth(0.75)
           .stroke();
+        // ⚠️ Nama merk pindah dari header ke footer, sekarang berpasangan
+        // dengan domain. Di header hanya ada logo di kiri dan judul di kanan — dua
+        // elemen visual sudah cukup, dan teks merek di sana memakan tinggi
+        // baris yang tidak perlu.
+        doc.font(reg).fontSize(8).fillColor('#94a3b8').text(
+          `${process.env.SMTP_FROM_NAME ?? 'Smart Plus'} — smart-plus.id`,
+          M,
+          fy - 2,
+          { width: W, align: 'left' },
+        );
         doc.font(reg).fontSize(8).fillColor('#94a3b8').text(
           `Dicetak otomatis oleh v3Netbill — ${fmtWib(new Date())} WIB`,
           M,
           fy - 2,
-          {
-            width: W,
-            align: 'center',
-          },
+          { width: W, align: 'right' },
         );
       };
 
@@ -217,74 +223,110 @@ export class LaporanService {
       };
 
       // ===== Header =====
-      // Logo memakai berkas PNG asli, jadi warna aslinya ikut terjaga. Lebarnya
-      // 150pt: cukup terbaca dari jauh, tapi tidak terlihat lebih besar dari
-      // judul laporan sendiri. Kalau berkasnya hilang, PDF tetap dibuat tanpa
-      // logo daripada gagal total.
-      let headerY = 44;
+      // Logo di KIRI, judul di KANAN, satu baris.
+      //
+      // ⚠️ Tinggi baris header HARUS dihitung dari mana pun yang lebih tinggi
+      // antara judul dan logo — BUKAN dari judul saja. Versi sebelumnya memakai
+      // `doc.y = headerY + tinggiJudul + 6` padahal logo (tinggi 42pt) jauh
+      // lebih tinggi daripada teks 18pt yang hanya ±22pt. Akibatnya garis
+      // pembatas dan baris "Hari Buku" digambar DI ATAS logo: pada file yang
+      // benar-benar dikirim, logo menutupi y 86-128 sementara "Hari Buku" ada
+      // di y 87. Jadi logo dan garisnya bertumpuk.
+      //
+      // ⚠️ Lebar logo 96pt, bukan 120pt. Kelima alasan:
+      //   1. 120pt terlalu besar untuk baris setinggi 22pt.
+      //   2. Logo punya wordmark "v3netbill" yang ikut mengecil — 96pt masih
+      //      terbaca, 120ptGlyoe Already memakai tinggi halaman yang tidak perlu.
+      //   3. Header jadi lebih pendek, dan ruang kosong bawah bertambah —
+      //      dipakai untuk memperbesar grafik (lihat catatan tinggi batang).
+      // Aspek rasio taken dari berkas asli: 411 x 144.
+      const headerY = 44;
+      const judul = 'Laporan Harian';
+      const LEBAR_LOGO = 96;
+      const RASIO_LOGO = 144 / 411;
+
+      doc.font(bold).fontSize(18).fillColor('#0f172a').text(judul, M, headerY, {
+        width: W,
+        align: 'right',
+      });
+      const tinggiJudulHeader = doc.y - headerY;
+
+      let tinggiLogo = 0;
       if (existsSync(LOGO_PATH)) {
-        const logoW = 150;
-        const logoH = Math.round((logoW * 144) / 411);
-        doc.image(LOGO_PATH, M + (W - logoW) / 2, headerY, { width: logoW, height: logoH });
-        headerY += logoH + 10;
+        tinggiLogo = Math.round(LEBAR_LOGO * RASIO_LOGO);
+        // Logo diratakan vertikal terhadap tinggi judul, lalu seluruh tinggi
+        // baris diambil dari yang terbesar — itu yang mencegah tumpang tindih.
+        const logoTop = headerY + Math.max(0, (tinggiJudulHeader - tinggiLogo) / 2);
+        doc.image(LOGO_PATH, M, logoTop, { width: LEBAR_LOGO, height: tinggiLogo });
       }
 
-      doc.font(bold).fontSize(20).fillColor('#0f172a').text('LAPORAN TUTUP HARI', M, headerY, {
-        width: W,
-        align: 'center',
-      });
-      headerY += 26;
-      doc
-        .font(reg)
-        .fontSize(11)
-        .fillColor('#64748b')
-        .text(process.env.SMTP_FROM_NAME ?? 'Warnet', M, headerY, { width: W, align: 'center' });
-      doc.y = headerY + 24;
+      const tinggiHeader = Math.max(tinggiJudulHeader, tinggiLogo);
+      doc.y = headerY + tinggiHeader + 8;
       doc
         .moveTo(M, doc.y)
         .lineTo(M + W, doc.y)
         .strokeColor('#cbd5e1')
         .lineWidth(1)
         .stroke();
-      doc.y += 8;
+      doc.y += 10;
 
-      // ===== Info baris 3 kolom =====
-      const infoItems: [string, string][] = [
-        ['Hari Buku', tanggal],
-        ['Batas Tutup', '23:30 WIB'],
-        ['Waktu Dibuat', fmtWib(new Date())],
-      ];
-      const infoGap = 12;
-      const infoW = (W - infoGap * 2) / 3;
+      // ===== Info: Hari Buku rata kiri, Waktu Dibuat rata KANAN =====
+      //
+      // ⚠️ "Batas Tutup" DIHAPUS. Nilai 23:30 WIB selalu sama setiap hari,
+      // jadi informasi itu bukan informasi — cuma menghabiskan satu kolom
+      // lebar penuh. "Hari Buku" tetap di posisi kiri seperti sebelumnya.
+      //
+      // ⚠️ Kolom kanan harus `align: 'right'`, BUKAN sekadar memindahkan
+      // kotaknya ke separuh halaman. Versi sebelumnya menaruh kotak
+      // "Waktu Dibuat" di `M + halfW` tapi teksnya tetap rata kiri, jadi
+      // label dan nilainya berhenti di tengah halaman — terlihat seperti tidak
+      // dipindahkan sama sekali. Rata kanan juga berarti tepi kanannya menyentuh
+      // tepi konten (`M + W`), jadi sejajar dengan isi tabel di bawahnya.
       const infoY = doc.y;
-      infoItems.forEach(([k, v], i) => {
-        const x = M + i * (infoW + infoGap);
-        doc.font(reg).fontSize(8).fillColor('#64748b').text(k, x, infoY);
-        doc.font(bold).fontSize(11).fillColor('#0f172a').text(v, x, infoY + 12);
+      const halfW = W / 2;
+      const infoItems: Array<[string, string, number, 'left' | 'right']> = [
+        ['Hari Buku', tanggal, M, 'left'],
+        ['Waktu Dibuat', `${fmtWib(new Date())} WIB`, M + halfW, 'right'],
+      ];
+      infoItems.forEach(([k, v, x, align]) => {
+        doc
+          .font(reg)
+          .fontSize(8)
+          .fillColor('#64748b')
+          .text(k, x, infoY, { width: halfW, align });
+        doc.font(bold).fontSize(11).fillColor('#0f172a').text(v, x, infoY + 12, {
+          width: halfW,
+          align,
+        });
       });
-      doc.y = infoY + 32;
+      doc.y = infoY + 30;
 
-      // ===== Ringkasan (gaya web: kartu MiniStat) =====
-      doc
-        .font(bold)
-        .fontSize(13)
-        .fillColor('#0f172a')
-        .text('Ringkasan', M, doc.y, { width: W, align: 'center' });
-      doc.moveDown(0.4);
-
+      // ⚠️ Judul "Ringkasan" DIHAPUS. Delapan kartu sudah berlabel jelas,
+      // jadi kata "Ringkasan" hanya menambah tinggi tanpa menambah
+      // informasi apa pun.
       const colGap = 10;
       const cardW = (W - colGap * 3) / 4;
       const cardH = 40;
-      const cardGapY = 10;
+      const cardGapY = 12;
+      // ⚠️ Urutan kartu mengikuti urutan baca yang diminta: baris 1 aktivitas
+      // akun (voucher lalu member), baris 2 rekap. "Total Pendapatan"
+      // sengaja TIDAK di pojok kiri baris 2 — kartu bertebalkan itu
+      // penanda total, jadi ia paling kanan sebagai penutup.
+      //
+      // ⚠️ Indeks kartu = kolom. `col = i % 4`, jadi urutan array ini
+      // menentukan posisi secara langsung. Mengubah urutan di sini tanpa
+      // mengubah perhitungan kolom hanya akan menggeser isi, bukan barisnya.
       const cards: [string, string, boolean][] = [
-        ['Total Login', String(agg.totalLogin), false],
-        ['Total Pendapatan', fmtRp(totalPendapatan), true],
-        ['Pendapatan Voucher', fmtRp(agg.pendapatanVoucher), false],
-        ['Pendapatan Member', fmtRp(agg.pendapatanMember), false],
-        ['Voucher Dibuat', String(agg.voucherTerbentuk), false],
+        // Baris 1
+        ['Voucher Baru', String(agg.voucherTerbentuk), false],
         ['Voucher Topup', String(agg.voucherTopup), false],
         ['Member Baru', String(agg.memberTerbentuk), false],
         ['Member Topup', String(agg.memberTopup), false],
+        // Baris 2
+        ['Total Login', String(agg.totalLogin), false],
+        ['Pendapatan Voucher', fmtRp(agg.pendapatanVoucher), false],
+        ['Pendapatan Member', fmtRp(agg.pendapatanMember), false],
+        ['Total Pendapatan', fmtRp(totalPendapatan), true],
       ];
       const startY = doc.y;
       cards.forEach(([label, value, prime], i) => {
@@ -322,13 +364,16 @@ export class LaporanService {
       // punya komponen grafik, jadi batang digambar dengan primitive biasa
       // (`rect`), dan skalanya dihitung dari nilai terbesar — supaya dua
       // grafik bisa dibandingkan secara visual.
-      const tinggiGrafik = 92;
-      const jarakAntarGrafik = 18;
-      // ⚠️ Keduanya di luar `batangDatar` dengan sengaja. Kalau tetap di
-      // dalam closure, penyesuaian ruang di bawah tidak akan pernah
-      //emonsinya sampai ke tempat batang digambar.
-      let tinggiBatang = 15;
-      let jarakBaris = 7;
+      const jarakAntarGrafik = 22;
+      // ⚠️ Tinggi batang dinaikkan (15 -> 20) untuk mengisi ruang yang
+      // tersisa setelah "Ringkasan" dan "Batas Tutup" dihapus dari header.
+      //
+      // Ini aman untuk syarat "satu halaman" karena yang menjaganya bukan
+      // perkiraan tinggi, tapi `MAKS_BARIS_TABEL` di bawah — angka itu yang
+      // membatasi bagian yang bisa tumbuh sendiri (tabel). Tinggi grafik
+      // tetap konstan, jadi mengubahnya hanya menggeser isi ke atas.
+      const tinggiBatang = 20;
+      const jarakBaris = 9;
       const judulGrafik = (teks: string, subtitle: string, y: number): number => {
         doc.font(bold).fontSize(13).fillColor('#0f172a').text(teks, M, y, { width: W });
         doc.font(reg).fontSize(8).fillColor('#94a3b8').text(subtitle, M, doc.y, { width: W });
@@ -393,7 +438,7 @@ export class LaporanService {
       // Dulu di sini ada "pemadatan" yang dijalankan saat ruang kurang. Dua
       // percobaan membuktikan itu tidak cuma sia-sia, tapi BURUK:
       //   - dipaksa kurang 70pt -> tetap 1 halaman (tidak membuktikan apa pun,
-      //     karena `contentBottom` cuma ambang, bukan ruang nyata);
+      //     karena ambang lama cuma ambang, bukan ruang nyata);
       //   - dipaksa kurang 630pt -> kode lama 56 halaman, versi "pemadatan"
       //     justru 133 halaman.
       // Alasannya: memadatkan gap hanya hemat sekitar 96pt, sedangkan

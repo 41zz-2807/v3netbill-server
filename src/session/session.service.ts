@@ -162,15 +162,55 @@ export class SessionService implements OnModuleDestroy {
     }
   }
 
+  /**
+   * Nyalakan ulang tick untuk setiap sesi yang masih `BERJALAN`.
+   *
+   * Dipanggil sekali saat gateway siap (`setGatewayEvents`). Ini yang membuat
+   * sesi milik pelanggan selamat dari restart server: tick di memory hilang
+   * bersama proses, tapi waktu bukan di memory — `startSessionTick()`
+   * menghitung ulang dari `Session.waktuMulai`, jadi tidak ada detik hilang.
+   *
+   * ⚠️ WAJIB dibungkus `try/catch`, dan tiap sesi diproses dalam `try/catch`
+   * sendiri. Dipanggil dari `afterInit()` yang tidak `await`, jadi penolakan di
+   * sini menjadi **unhandled rejection** — dan unhandled rejection yang lewat
+   * dari `afterInit` menjatuhkan seluruh proses Node, bukan cuma recovery.
+   * Itu kelas bug yang sudah dua kali mematikan seluruh backend (lihat
+   * `0c13a60` dan crash 30 Sep), jadi tidak boleh dibuka lagi di sini.
+   *
+   * Try/catch per sesi bukan paranoia: satu baris `Session` yang aneh tidak
+   * boleh mencegah sesi pelanggan lain ikut ditick ulang.
+   */
   private async recoverRunningSessions(): Promise<void> {
-    const sessions = await this.prisma.session.findMany({
-      where: { status: SessionStatus.BERJALAN },
-    });
-    for (const s of sessions) {
-      this.startSessionTick(s.id);
+    let sesi: Array<{ id: string }> = [];
+    try {
+      sesi = await this.prisma.session.findMany({
+        where: { status: SessionStatus.BERJALAN },
+        select: { id: true },
+      });
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      this.logger.error(`Recovery sesi gagal membaca database: ${pesan}`);
+      return;
     }
-    if (sessions.length > 0) {
-      this.logger.log(`Recovery: ${sessions.length} sesi berjalan — tick loop di-restart`);
+
+    let hidup = 0;
+    let gagal = 0;
+    for (const s of sesi) {
+      try {
+        this.startSessionTick(s.id);
+        hidup++;
+      } catch (e) {
+        gagal++;
+        const pesan = e instanceof Error ? e.message : String(e);
+        this.logger.error(`Recovery sesi ${s.id} gagal: ${pesan}`);
+      }
+    }
+
+    if (sesi.length > 0) {
+      this.logger.log(
+        `Recovery: ${hidup} sesi berjalan — tick loop di-restart` +
+          (gagal > 0 ? ` (${gagal} gagal)` : ''),
+      );
     }
   }
 
@@ -815,6 +855,13 @@ export class SessionService implements OnModuleDestroy {
     this.gatewayEvents?.broadcastActivityLog('session:stopped', {
       sessionId,
       pcId: session.pcId,
+      // ⚠️ `akun` WAJIB ikut. Tanpa ini kolom Detail di halaman Log Aktivitas
+      // hanya bisa menulis "Waktu habis, sisa kembali 0j 00:00" — kalimat
+      // yang sama persis untuk sesi mana pun, jadi kasir tidak pernah tahu
+      // akun siapa yang barusan berakhir. `session:started` sudah mengirimnya;
+      // sekarang `session:stopped` juga, jadi satu pasangan log bisa dibaca
+      // utuh tanpa perlu menggabungkan dua baris berbeda.
+      akun: session.account.kodeUnik ?? session.account.nama,
       alasan,
       durasiTerpakaiDetik,
       sisaWaktuKembali,
@@ -1124,6 +1171,12 @@ async autoShutdownMenit(): Promise<number> {
         );
         this.gatewayEvents?.broadcastActivityLog('pc_shutdown_auto', {
           pcId: pc.id,
+          // ⚠️ Nama PC ikut, bukan cuma `pcId`. Kolom Detail di halaman Log
+          // Aktivitas mencoba mencari nama dari daftar PC yang sedang tampil,
+          // jadi kalau PC-nya tidak ada di sana (mis. sudah ditandai rusak)
+          // kolomnya kosong dan log shutdown otomatis terlihat tanpa
+          // keterangan. Nama ikut di payload apa adanya, bukan hasil tebakan.
+          pc: pc.namaPc,
           alasan: 'idle',
           menit,
           detail: `idle ${menit} menit tanpa aktivitas login`,

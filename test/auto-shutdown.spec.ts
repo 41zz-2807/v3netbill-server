@@ -249,6 +249,28 @@ describe('jalur happy', () => {
     expect(String(log[0].payload.alasan)).toBe('idle');
     expect(String(log[0].payload.detail)).toContain('5 menit');
   });
+
+  it('log shutdown otomatis menyebut NAMA PC, bukan cuma id', async () => {
+    const { svc, log } = harness();
+
+    await periksa(svc);
+
+    // ⚠️ Kolom Detail di halaman Log Aktivitas mengambil nama PC dari daftar
+    // PC yang sedang tampil. Kalau PC-nya tidak ada di sana — termasuk PC yang
+    // sedang dimatikan otomatis — kolomnya kosong dan baris ini terlihat
+    // seperti tanpa keterangan sama sekali. Nama harus ikut di payload.
+    expect(String(log[0].payload.pc)).toBe('PC001');
+  });
+
+  it('nama PC ikut memakai nama yang dikustomisasi, bukan id', async () => {
+    // Nama PC bisa diganti operator kapan saja (`PATCH /pcs/:id/nama`), jadi
+    // yang masuk payload harus nama yang tampil, bukan `pc-1`.
+    const { svc, log } = harness({ pc: { namaPc: 'PC-KASIR-7' } });
+
+    await periksa(svc);
+
+    expect(String(log[0].payload.pc)).toBe('PC-KASIR-7');
+  });
 });
 
 describe('hitung mundur di dashboard', () => {

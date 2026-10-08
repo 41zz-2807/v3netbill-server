@@ -249,9 +249,10 @@ export class LogBillingService {
    * tumbuh terus kalau server sempat mati berhari-hari.
    */
   async hapusLama(umurHari = UMUR_HARI): Promise<number> {
-    // `setDate` memakai jam lokal server (UTC). Aman di sini karena yang
-    // dipakai hanya tanggalnya, dan selisih 7 jam tidak cukup untuk melewati
-    // ambang tanggal pada jendela retensi 30 hari.
+    // `setDate` memakai jam lokal server — sejak 7 Okt container memakai TZ
+    // Asia/Jakarta (dulu UTC). Aman di sini karena yang dipakai hanya
+    // tanggalnya, dan selisih zona tidak cukup untuk melewati ambang tanggal
+    // pada jendela retensi 30 hari.
     const batas = new Date();
     batas.setDate(batas.getDate() - umurHari);
     const batasTgl = tanggalWib(batas);

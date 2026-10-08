@@ -26,6 +26,10 @@ import { SessionService } from '../src/session/session.service.js';
  * `SessionService` menjalankan `startDisconnectCheck()`, yang memanggil
  * `pc.findMany` / `pc.updateMany`. Tanpa itu, interval berjalan di atas mock
  * yang salah dan errornya muncul di tempat yang tidak ada hubungannya.
+ *
+ * ⚠️ `setting` juga wajib, untuk alasan yang sama: constructor menjalankan
+ * `loadGracePeriod()` fire-and-forget, dan tanpa `setting.findUnique` ia
+ * melempar unhandled rejection yang membuat vitest menandai file ini gagal.
  */
 function prismaTiruan(session: Record<string, unknown>) {
   return {
@@ -40,6 +44,7 @@ function prismaTiruan(session: Record<string, unknown>) {
       updateMany: vi.fn().mockResolvedValue({ count: 0 }),
     },
     account: { update: vi.fn().mockResolvedValue({}) },
+    setting: { findUnique: vi.fn().mockResolvedValue(null) },
   };
 }
 

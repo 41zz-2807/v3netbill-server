@@ -85,7 +85,7 @@ export class UptimePdfService {
       );
     y += 16;
 
-    doc.moveTo(M, yPdf(doc, y)).lineTo(M + W, yPdf(doc, y)).lineWidth(1).strokeColor('#cbd5e1').stroke();
+    doc.moveTo(M, y).lineTo(M + W, y).lineWidth(1).strokeColor('#cbd5e1').stroke();
     y += 12;
 
     // ── Ringkasan listrik ────────────────────────────────────────────────
@@ -97,9 +97,13 @@ export class UptimePdfService {
       ['Total nyala', formatDurasi(l.totalDetik)],
     ];
     const lebarKartu = W / kartu.length;
-    for (const [label, nilai] of kartu) {
-      doc.font(reg).fontSize(8).fillColor('#64748b').text(label, M, y, { width: lebarKartu });
-      doc.font(bold).fontSize(12).fillColor('#0f172a').text(nilai, M, y + 11, { width: lebarKartu });
+    // ⚠️ Tiap kartu HARUS geser ke kanan ~lebarKartu. Kalau semua pakai x yang
+    // sama, lima label dan lima nilai menumpuk jadi satu tumpukan teks di
+    // pojok kiri, dan kasir tidak bisa membaca satu pun angkanya.
+    for (const [i, [label, nilai]] of kartu.entries()) {
+      const xk = M + i * lebarKartu;
+      doc.font(reg).fontSize(8).fillColor('#64748b').text(label, xk, y, { width: lebarKartu });
+      doc.font(bold).fontSize(12).fillColor('#0f172a').text(nilai, xk, y + 11, { width: lebarKartu });
     }
     y += 32;
 
@@ -161,28 +165,35 @@ export class UptimePdfService {
       '#0f172a',
     );
 
-    // ── Grafik batang per hari ──────────────────────────────────────────
+    // ── Grafik HARIAN per PC (garis) — persis seperti di web ─────────────
     y += 22;
-    if (y + 150 > doc.page.height - 70) {
+    if (y + 170 > doc.page.height - 70) {
       doc.addPage();
       y = M;
     }
-    doc.font(bold).fontSize(12).fillColor('#0f172a').text('Uptime per hari (menit)', M, y);
+    doc.font(bold).fontSize(12).fillColor('#0f172a').text('Uptime harian per PC (menit)', M, y);
     y += 18;
-    const tinggiGrafik = 110;
+    gambarGarisHarian(doc, M, y, W, 120, r);
+    y += 120 + 26;
+
+    // ── Grafik batang per PC (total rentang) — persis seperti di web ─────
+    if (y + 170 > doc.page.height - 70) {
+      doc.addPage();
+      y = M;
+    }
+    doc.font(bold).fontSize(12).fillColor('#0f172a').text('Total uptime per PC (menit)', M, y);
+    y += 18;
     gambarBatang(
       doc,
       M,
       y,
       W,
-      tinggiGrafik,
-      r.tanggal.map((t) => ({
-        label: t.slice(5),
-        nilai: Math.round(
-          r.pcs.reduce((j, pc) => j + (pc.perHari.find((h) => h.tanggal === t)?.detik ?? 0), 0) / 60,
-        ),
-      })),
+      110,
+      [...r.pcs]
+        .sort((a, b) => b.detik - a.detik)
+        .map((pc) => ({ label: pc.namaPc, nilai: Math.round(pc.detik / 60) })),
     );
+    y += 110 + 4;
 
     // Footer memakai koordinat absolut di halaman TERAKHIR, dan digambar
     // paling akhir. Kalau digambar di tengah, `addPage()` di atas membuatnya
@@ -201,41 +212,6 @@ export class UptimePdfService {
 }
 
 
-/**
- * Ubah "y dari atas" (konvensi yang dipakai `doc.text`) menjadi y PDF
- * (dari bawah) — dan sebaliknya.
- *
- * ⚠️ INI Sumber bug yang harus dipasang SEKALI di file ini, lalu dipakai di
- * mana pun. Dua koordinat dalam PDF tidak satu satuan:
- *
- * | Elemen              | y dihitung dari |
- * |---------------------|-----------------|
- * | `doc.text(x, y)`    | ATAS            |
- * | `doc.rect()` / `moveTo()` / `lineTo()` | BAWAH |
- *
- * Mengcampur keduanya tidak merusak apa pun — pdfkit tidak pernah memeriksa
- * tabrakan, halaman tetap 1, PDF tetap "berhasil" dibuat. Hanya isi halaman
- * yang salah: pada versi pertama setiap kotak baris tabel muncul ~500pt di
- * bawah teksnya, jauh di luar area tabel.
- *
- * Semua fungsi di bawah memakai SATU konvensi (dari atas) lalu mengonversi
- * di titik terakhir, supaya tidak ada yang bisa lupa.
- */
-function yPdf(doc: PDFKit.PDFDocument, yDariAtas: number): number {
-  return doc.page.height - yDariAtas;
-}
-
-/** Kotak yang `y` diberi sebagai "dari atas" (menjadi tepi ATAS kotak). */
-function kotakAtas(
-  doc: PDFKit.PDFDocument,
-  x: number,
-  yDariAtas: number,
-  w: number,
-  h: number,
-  warna: string,
-): void {
-  doc.rect(x, doc.page.height - yDariAtas - h, w, h).fill(warna);
-}
 
 /**
  * Tulis satu baris tabel dan kembalikan koordinat y baris berikutnya.
@@ -255,7 +231,7 @@ function tulisBaris(
 ): number {
   const tinggi = 18;
   const M = 40;
-  kotakAtas(doc, M, y, kolom.reduce((n, k) => n + k.lebar, 0), tinggi, warnaLatar);
+  doc.rect(M, y, kolom.reduce((n, k) => n + k.lebar, 0), tinggi).fill(warnaLatar);
   let x = M;
   for (let i = 0; i < kolom.length; i++) {
     const k = kolom[i];
@@ -286,7 +262,9 @@ function gambarBatang(
     const d = data[i];
     const tinggiBatang = Math.max(1, (d.nilai / maks) * (tinggi - 22));
     const bx = x + i * lebarSlot + (lebarSlot - lebarBatang) / 2;
-    kotakAtas(doc, bx, y + tinggi - tinggiBatang, lebarBatang, tinggiBatang, '#0d9488');
+    // ⚠️ Warna batang ikut palet halaman web (WARNA_UPTIME = #0ea5e9), supaya
+    // grafik di PDF tidak terlihat seperti diagram yang dibuat orang lain.
+    doc.rect(bx, y + tinggi - tinggiBatang, lebarBatang, tinggiBatang).fill('#0ea5e9');
     doc
       .font('Helvetica')
       .fontSize(6)
@@ -294,6 +272,95 @@ function gambarBatang(
       .text(d.label, x + i * lebarSlot, y + tinggi - 10, { width: lebarSlot, align: 'center' });
   }
   return y + tinggi + 4;
+}
+
+/**
+ * Grafik HARIAN per PC — satu garis per PC, persis `LineChart` di halaman web.
+ *
+ * ⚠️ Semua koordinat pdfkit (text, rect, moveTo/lineTo) dibaca
+ * dari kiri atas dengan y bertambah ke bawah.
+ *
+ * Sumbu X = tanggal dalam rentang. Kalau rentangnya satu hari, satu titik —
+ * itupun masih benar, karena titik itu bisa dilihat dari legenda PC-nya.
+ */
+function gambarGarisHarian(
+  doc: PDFKit.PDFDocument,
+  x: number,
+  y: number,
+  w: number,
+  tinggi: number,
+  r: UptimeRingkasan,
+): void {
+  const tanggal = r.tanggal;
+  if (tanggal.length === 0 || r.pcs.length === 0) return;
+
+  // Nilai maks untuk skala Y. 0 tidak boleh jadi pembagi: grafik PC warnet
+  // berisi nol pada hari pertama, dan `nilai/0` jadi NaN yang akan menggambar
+  // garis keluar halaman tanpa error.
+  const nilaiPerPcPerHari = r.pcs.map((pc) =>
+    tanggal.map((t) => (pc.perHari.find((h) => h.tanggal === t)?.detik ?? 0) / 60),
+  );
+  let maks = 1;
+  for (const deret of nilaiPerPcPerHari) for (const v of deret) maks = Math.max(maks, v);
+
+  const padL = 34; // ruang label sumbu Y
+  const padR = 6;
+  const plotW = w - padL - padR;
+  const plotH = tinggi - 16;
+  const slotX = tanggal.length > 1 ? plotW / (tanggal.length - 1) : 0;
+  const posisiX = (i: number) => x + padL + (tanggal.length > 1 ? i * slotX : slotX / 2);
+  const posisiY = (v: number) => y + (plotH - (v / maks) * plotH);
+
+  // Grid + label sumbu Y (0, setengah, maks)
+  for (const [frac, label] of [[0, '0'], [0.5, formatMenitSumbu(maks / 2)], [1, formatMenitSumbu(maks)]] as [number, string][]) {
+    const yy = y + plotH - frac * plotH;
+    doc.moveTo(x + padL, yy).lineTo(x + w - padR, yy)
+      .lineWidth(0.5).strokeColor('#e2e8f0').stroke();
+    doc.font('Helvetica').fontSize(7).fillColor('#94a3b8')
+      .text(label, x, yy - 4, { width: padL - 4, align: 'right' });
+  }
+  // Garis sumbu X
+  doc.moveTo(x + padL, y + plotH).lineTo(x + w - padR, y + plotH)
+    .lineWidth(1).strokeColor('#cbd5e1').stroke();
+
+  // Label sumbu X — dipadatkan kalau terlalu rapat, supaya tidak tumpang.
+  const maksLabel = Math.max(1, Math.floor(plotW / 42));
+  for (let i = 0; i < tanggal.length; i += Math.max(1, Math.ceil(tanggal.length / maksLabel))) {
+    doc.font('Helvetica').fontSize(7).fillColor('#94a3b8')
+      .text(tanggal[i].slice(5), posisiX(i) - 21, y + plotH + 3, { width: 42, align: 'center' });
+  }
+
+  // Satu garis per PC, warna sesuai legenda.
+  const WARNA = ['#0ea5e9', '#f97316', '#22c55e', '#a855f7', '#ef4444', '#14b8a6', '#eab308', '#ec4899', '#3b82f6', '#84cc16'];
+  r.pcs.forEach((pc, pi) => {
+    const deret = nilaiPerPcPerHari[pi];
+    for (let i = 0; i < deret.length - 1; i++) {
+      doc.moveTo(posisiX(i), posisiY(deret[i]))
+        .lineTo(posisiX(i + 1), posisiY(deret[i + 1]))
+        .lineWidth(1.6).strokeColor(WARNA[pi % WARNA.length]).stroke();
+    }
+    for (let i = 0; i < deret.length; i++) {
+      doc.circle(posisiX(i), posisiY(deret[i]), 1.8).fill(WARNA[pi % WARNA.length]);
+    }
+  });
+
+  // Legenda — satu baris, dibungkus kalau tidak muat.
+  let lx = x + padL;
+  const ly = y + plotH + 14;
+  r.pcs.forEach((pc, pi) => {
+    doc.moveTo(lx, ly + 4).lineTo(lx + 14, ly + 4)
+      .lineWidth(2.4).strokeColor(WARNA[pi % WARNA.length]).stroke();
+    doc.font('Helvetica').fontSize(7);
+    const lebar = doc.widthOfString(pc.namaPc) + 20;
+    doc.font('Helvetica').fontSize(7).fillColor('#475569').text(pc.namaPc, lx + 16, ly, { width: lebar });
+    lx += 16 + lebar + 8;
+    if (lx > x + w - 40) lx = x + padL; // bungkus ke baris berikutnya jika penuh
+  });
+}
+
+/** Label sumbu Y — nilai menit jadi ringkas (mis. 90 -> "90", 120 -> "120"). */
+function formatMenitSumbu(menit: number): string {
+  return String(Math.round(menit));
 }
 
 /** Rupiah bulat — sama dengan `formatRupiahBulat()` di halaman web. */

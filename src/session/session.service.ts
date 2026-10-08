@@ -116,6 +116,10 @@ const AUTO_SHUTDOWN_DEFAULT_MENIT = 5;
  * `getSessionStatus()`, dan `sesiBerjalanUntukAgent()`); menyatukannya
  * mencegah ketiganya melenceng berbeda.
  */
+export function pesanAkunTerpakai(namaPc: string | null | undefined): string {
+  return namaPc ? `Akun sedang dipakai di ${namaPc}` : 'Akun sedang dipakai di PC lain';
+}
+
 export function sisaWaktuSekarang(
   waktuMulai: Date,
   saldoDetik: number,
@@ -524,49 +528,9 @@ export class SessionService implements OnModuleDestroy {
       }
     }
 
-    const existingSession = await this.prisma.session.findFirst({
-      where: { pcId, status: SessionStatus.BERJALAN },
-    });
-
-    if (existingSession) {
-      return { success: false, message: 'PC sudah memiliki sesi berjalan' };
-    }
-
-    const session = await this.prisma.session.create({
-      data: {
-        pcId,
-        accountId: account.id,
-        waktuMulai: new Date(),
-        status: SessionStatus.BERJALAN,
-        durasiTerpakaiDetik: 0,
-      },
-    });
-
-    await this.prisma.account.update({
-      where: { id: account.id },
-      data: { lastUsedAt: new Date() },
-    });
-
-    await this.prisma.pc.update({
-      where: { id: pcId },
-      data: { status: PcStatus.ACTIVE },
-    });
-
-    this.gatewayEvents?.broadcastPcUpdate();
-    this.gatewayEvents?.broadcastActivityLog('session:started', {
-      sessionId: session.id,
-      pcId,
-      akun: account.kodeUnik ?? account.nama,
-      durasiDetik: account.sisaWaktuDetik,
-    });
-    this.startSessionTick(session.id);
-
-    return {
-      success: true,
-      sessionId: session.id,
-      durasiDetikTersedia: account.sisaWaktuDetik,
-      account: { kodeUnik: account.kodeUnik, nama: account.nama, tipe: account.tipe },
-    };
+    // Seluruh pembuatan sesi lewat SATU fungsi, supaya penjaga (PC rusak, PC
+    // terpakai, akun terpakai) tidak bisa terlewat di salah satu jalur.
+    return this.createSessionAndStart(pcId, account);
   }
 
   /**
@@ -756,15 +720,37 @@ export class SessionService implements OnModuleDestroy {
       return { success: false, message: 'PC sudah memiliki sesi berjalan' };
     }
 
-    const session = await this.prisma.session.create({
-      data: {
-        pcId,
-        accountId: account.id,
-        waktuMulai: new Date(),
-        status: SessionStatus.BERJALAN,
-        durasiTerpakaiDetik: 0,
-      },
+    // 🔴 Satu akun = satu sesi berjalan. Tanpa ini akun yang sama bisa dipakai di
+    // dua PC sekaligus, dan hitung mundur keduanya saling melompat karena sama-sama
+    // dihitung dari saldo akun yang sama.
+    const sesiAkun = await this.prisma.session.findFirst({
+      where: { accountId: account.id, status: SessionStatus.BERJALAN },
+      select: { pc: { select: { namaPc: true } } },
     });
+    if (sesiAkun) {
+      return { success: false, message: pesanAkunTerpakai(sesiAkun.pc?.namaPc) };
+    }
+
+    let session;
+    try {
+      session = await this.prisma.session.create({
+        data: {
+          pcId,
+          accountId: account.id,
+          waktuMulai: new Date(),
+          status: SessionStatus.BERJALAN,
+          durasiTerpakaiDetik: 0,
+        },
+      });
+    } catch (e) {
+      // Indeks unik parsial `Session_accountId_berjalan_key` (satu sesi
+      // BERJALAN per akun) menutup balapan: dua permintaan yang lolos
+      // pengecekan di atas bersamaan, hanya satu yang boleh menang.
+      if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
+        return { success: false, message: pesanAkunTerpakai(null) };
+      }
+      throw e;
+    }
 
     await this.prisma.account.update({
       where: { id: account.id },

@@ -9,18 +9,10 @@ import type { UptimeRingkasan } from '../src/uptime/uptime-query.service.js';
  * ⚠️ Tes ini membaca ISI PDF hasil build, bukan memanggil fungsi internal.
  * Jadi yang diperiksa benar yang keluar dari `build()`.
  *
- * ⚠️ Dua koordinat dalam PDF tidak satu satuan, dan mencampur keduanya
- * tidak merusak apa pun:
- *
- * | Elemen                   | y dihitung dari |
- * |--------------------------|-----------------|
- * | Teks (`Tm`)              | ATAS            |
- * | Kotak & garis (`re`, `m`, `l`) | BAWAH  |
- *
- * Karena itu keduanya harus dibalik sebelum dibandingkan: `841.89 - y`
- * untuk yang dari bawah. Versi pertama dari PDF ini memakai y dari atas untuk
- * `doc.rect()`, sehingga setiap kotak baris tabel muncul ~500pt di bawah
- * teksnya. Tidak ada error, halaman tetap 1, PDF tetap "berhasil".
+ * ⚠️ pdfkit memakai SATU sistem koordinat: origin di kiri atas, y bertambah
+ * ke bawah — berlaku untuk teks, kotak (`re`), dan garis (`m`/`l`).
+ * Tidak-coalesce artinya: stream `m[2]`/`re[1]` langsung bisa dibandingkan
+ * dengan teks[`yAtas`] tanpa pembalikan lagi.
  */
 const HAL = 841.89;
 
@@ -90,10 +82,10 @@ function urai(pdf: string): { teks: Posisi[]; kotak: Box[]; garis: number[] } {
     const w = Number(m[3]);
     const h = Number(m[4]);
     if (h < 4) continue; // batang 1px untuk hari tanpa data diabaikan
-    kotak.push({ x, yBawah, w, h, yAtas: HAL - (yBawah + h) });
+    kotak.push({ x, w, h, yAtas: yBawah });
   }
   for (const m of pdf.matchAll(/([\d.-]+) ([\d.-]+) m\n([\d.-]+) ([\d.-]+) l/g)) {
-    garis.push(HAL - Number(m[2]));
+    garis.push(Number(m[2]));
   }
   return { teks, kotak, garis };
 }
@@ -124,8 +116,9 @@ describe('PDF laporan uptime', () => {
   it('🔴 setiap kotak baris tabel MEMILIKI teks di dalamnya', async () => {
     const { isi: pdf, kasar } = await ambilPdf('2026-10-01', '2026-10-06', 5);
     const { teks, kotak } = urai(pdf);
-    // Baris tabel punya tinggi 18. Ambil kotak setebal itu saja.
-    const baris = kotak.filter((k) => Math.abs(k.h - 18) < 1);
+    // Baris tabel selalu seluas tabel (x~40, w~515). Batang grafik jauh
+    // lebih sempit, jadi disaring dari tampilanTabel.
+    const baris = kotak.filter((k) => k.x < 60 && k.w > 350);
     expect(baris.length).toBeGreaterThanOrEqual(7); // header + 5 PC + TOTAL
 
     const tanpaTeks = baris.filter(
@@ -145,7 +138,7 @@ describe('PDF laporan uptime', () => {
   it('🔴 kotak tabel tidak jauh di bawah teksnya (regresi bug koordinat)', async () => {
     const { isi: pdf, kasar } = await ambilPdf('2026-10-01', '2026-10-06', 5);
     const { teks, kotak } = urai(pdf);
-    const baris = kotak.filter((k) => Math.abs(k.h - 18) < 1);
+    const baris = kotak.filter((k) => k.x < 60 && k.w > 350);
     // ⚠️ Yang dibandingkan OFFSET, bukan rentang. Mengukur rentang (kotak
     // terakhir - teks pertama) selalu besar karena tabel memang punya
     // banyak baris — tes itu akan selalu benar walau kotakNY yang salah.
@@ -162,12 +155,14 @@ describe('PDF laporan uptime', () => {
   it('garis pemisah ada dan berada DI BAWAH subjudul, bukan di dasar halaman', async () => {
     const { isi: pdf, kasar } = await ambilPdf('2026-10-01', '2026-10-06', 5);
     const { teks, garis } = urai(pdf);
-    expect(garis.length).toBe(1);
     const subjudul = teks.find((t) => t.teks.includes('Dihitung dari heartbeat'));
     expect(subjudul).toBeDefined();
-    // ⚠️ Tanpa pembalikan, garis ada di y ~750 (dasar halaman).
-    expect(garis[0]).toBeGreaterThan(subjudul!.yAtas);
-    expect(garis[0]).toBeLessThan(subjudul!.yAtas + 60);
+    // Sekarang ada juga garis grid grafik, jadi cukup periksa: ada garis
+    // horizontal DI BAWAH subjudul tapi tidak terlalu jauh — itu pembatasnya.
+    // Tanpa pembalikan, pembatas itu ditemukan di y ~750 (dasar halaman).
+    const pembatas = garis.find((g) => g > subjudul!.yAtas && g < subjudul!.yAtas + 60);
+    expect(pembatas).toBeDefined();
+    expect(pembatas).toBeLessThan(200);
   });
 
   it('judul paling atas, lalu periode, lalu catatan — tidak saling menimpa', async () => {
@@ -193,14 +188,14 @@ describe('PDF laporan uptime', () => {
   it('banyak PC = 5 baris tabel + header + TOTAL', async () => {
     const { isi: pdf, kasar } = await ambilPdf('2026-10-01', '2026-10-06', 5);
     const { kotak } = urai(pdf);
-    const baris = kotak.filter((k) => Math.abs(k.h - 18) < 1);
+    const baris = kotak.filter((k) => k.x < 60 && k.w > 350);
     expect(baris.length).toBe(7);
   });
 
   it('24 hari tetap muat dan tidak menumpuk isi', async () => {
     const { isi: pdf, kasar } = await ambilPdf('2026-09-13', '2026-10-06', 6);
     const { teks, kotak } = urai(pdf);
-    const baris = kotak.filter((k) => Math.abs(k.h - 18) < 1);
+    const baris = kotak.filter((k) => k.x < 60 && k.w > 350);
     // 1 header + 6 PC + 1 TOTAL = 8 baris, semuanya harus punya teks
     expect(baris.length).toBe(8);
     const yUnik = new Set(baris.map((k) => Math.round(k.yAtas)));

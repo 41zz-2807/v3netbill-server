@@ -1,9 +1,11 @@
 /**
  * Batas hari dalam zona WIB.
  *
- * ⚠️ Server dan database berjalan di zona UTC, jadi `new Date('2026-10-04')`
- * berarti 00:00 **UTC** = 07:00 WIB. Dipakai langsung sebagai batas "dari",
- * filter jadi kehilangan transaksi 7 jam pertama setiap hari.
+ * ⚠️ `new Date('2026-10-04')` selalu 00:00 **UTC** (format date-only memang
+ * ditulis UTC oleh spesifikasi) = 07:00 WIB, dan database juga menyimpan UTC.
+ * Dipakai langsung sebagai batas "dari", filter jadi kehilangan transaksi 7
+ * jam pertama setiap hari. Helper ini memakai `Date.UTC`, jadi hasilnya tidak
+ * berapa pun `TZ` container (sejak 7 Okt container aplikasi = Asia/Jakarta).
  *
  * `"2026-10-04"` → `2026-10-03T17:00:00.000Z` (00:00 WIB)
  * `sampai` → `2026-10-04T16:59:59.999Z` (23:59 WIB)

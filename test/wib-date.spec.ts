@@ -31,10 +31,11 @@ describe('akhirHariWib', () => {
 
   // `setHours(23,59,59,999)` di server UTC = 23:59 UTC = 06:59 WIB tomorrow,
   // jadi transaksi 00:00-06:59 WIB hari berikutnya ikut masuk.
+  // Perbandingan ditulis eksplisit `Date.UTC`, bukan `setHours`, supaya tes ini
+  // tidak bergantung pada `TZ` container (sejak 7 Okt container = Asia/Jakarta).
   it('batas atas 7 jam lebih awal daripada setHours di server UTC', () => {
-    const batasLama = new Date('2026-10-04');
-    batasLama.setHours(23, 59, 59, 999);
-    expect(akhirHariWib('2026-10-04').getTime()).toBe(batasLama.getTime() - 7 * 3600_000);
+    const batasLamaUtc = Date.UTC(2026, 9, 4, 23, 59, 59, 999);
+    expect(akhirHariWib('2026-10-04').getTime()).toBe(batasLamaUtc - 7 * 3600_000);
   });
 });
 

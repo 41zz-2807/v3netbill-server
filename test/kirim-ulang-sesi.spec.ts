@@ -55,6 +55,9 @@ function harness(sesi: unknown) {
     session: { findFirst, findUnique: vi.fn().mockResolvedValue(null) },
     pc: { updateMany: vi.fn().mockResolvedValue({ count: 0 }), findMany: vi.fn().mockResolvedValue([]) },
     account: { findMany: vi.fn().mockResolvedValue([]) },
+    // constructor memanggil loadGracePeriod() fire-and-forget; tanpa `setting`
+    // mock-nya melempar unhandled rejection dan vitest menandai file gagal.
+    setting: { findUnique: vi.fn().mockResolvedValue(null) },
   } as never);
   (svc as unknown as { logger: typeof logger }).logger = logger;
   return { svc, findFirst, logger };

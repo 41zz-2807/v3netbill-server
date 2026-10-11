@@ -13,3 +13,8 @@ frontend-dist
 clean.mjs
 hb-live.mjs
 x.mjs
+# jj2/jj3 membuat JWT ADMIN dari process.env.JWT_SECRET — jangan pernah ikut repo.
+# probe.mjs riset koordinat PDF, sekali pakai.
+jj2.mjs
+jj3.mjs
+probe.mjs

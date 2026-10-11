@@ -14,6 +14,12 @@ export interface DashboardPcInfo {
   status: PcStatus;
   lastHeartbeatAt: Date | null;
   /**
+   * Versi agent yang terpasang di PC ini, dilaporkan lewat `agent:register`.
+   * `null` = PC ini belum pernah melapor — agent-nya versi lama, atau belum
+   * pernah konek sejak kolom ini ada. Jangan diperlakukan sebagai "terlama".
+   */
+  versiAgent: string | null;
+  /**
    * Sisa detik sebelum PC dimatikan otomatis. `null` = PC tidak akan dimatikan
    * (sedang ada sesi berjalan, ditandai rusak, atau fiturnya dimatikan admin).
    *
@@ -289,7 +295,7 @@ export class SessionService implements OnModuleDestroy {
     return pc?.agentToken === agentToken;
   }
 
-  async registerPc(pcId: string, ipTerlihat?: string | null): Promise<void> {
+  async registerPc(pcId: string, ipTerlihat?: string | null, versiAgent?: string | null): Promise<void> {
     const runningSession = await this.prisma.session.findFirst({
       where: { pcId, status: SessionStatus.BERJALAN },
     });
@@ -310,6 +316,21 @@ export class SessionService implements OnModuleDestroy {
       });
       if (pc && pc.ipClient !== ipTerlihat) {
         data.ipClient = ipTerlihat;
+      }
+    }
+    // ⚠️ Sama seperti IP: hanya tulis kalau benar-benar berubah atau belum
+    // pernah terisi. Agent versi lama tidak mengirim field ini sama sekali,
+    // jadi `versiAgent` kosong TIDAK boleh menjadi alasan menimpa nilai yang
+    // sudah benar — kalau begitu cukup satu agent lawas yang konek untuk
+    // menghapus versi PC yang sudah melapor dengan benar.
+    if (versiAgent && versiAgent.trim()) {
+      const bersih = versiAgent.trim().slice(0, 32);
+      const pc = await this.prisma.pc.findUnique({
+        where: { id: pcId },
+        select: { versiAgent: true },
+      });
+      if (pc && pc.versiAgent !== bersih) {
+        data.versiAgent = bersih;
       }
     }
     await this.prisma.pc.update({ where: { id: pcId }, data });
@@ -409,6 +430,7 @@ export class SessionService implements OnModuleDestroy {
           ipClient: pc.ipClient,
           status,
           lastHeartbeatAt: pc.lastHeartbeatAt,
+          versiAgent: pc.versiAgent,
           // Sisa detik sebelum PC dimatikan otomatis, null = tidak akan dimatikan.
           //
           // ⚠️ PC yang sedang dipakai teknisi juga `null`. Hitung mundur di sini
@@ -437,6 +459,7 @@ export class SessionService implements OnModuleDestroy {
         ipClient: pc.ipClient,
         status,
         lastHeartbeatAt: pc.lastHeartbeatAt,
+        versiAgent: pc.versiAgent,
         // ⚠️ Selalu null saat ada sesi berjalan, apa pun isi kolomnya. Kalau
         // kolomnya belum sempat di-reset (mis. backend restart di tengah sesi),
         // dashboard tidak boleh menampilkan hitung mundur pada PC yang sedang

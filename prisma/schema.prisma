@@ -114,6 +114,20 @@ model Pc {
   // supaya perintah mati tidak dikirim ulang setiap 10 detik.
   terakhirAktifAt  DateTime?
 
+  // ⚠️ Versi agent yang TERPASAANG di PC ini, dilaporkan agent lewat
+  // `agent:register`. Ditulis MSI ke registry sebagai `AgentVersion`
+  // (Installer/Product.wxs) — jadi nilainya sama persis dengan versi yang
+  // tertera di Program and Features Windows.
+  //
+  // ⚠️ `null` berarti PC ini belum pernah melaporkan versi: agent versi lama
+  // (sebelum kolom ini ada) tidak mengirim field itu, dan sengaja dibaca
+  // sebagai "tidak diketahui" BUKAN "terlama". Menampilkan "terlama" untuk
+  // PC yang mungkin justru yang terbaru akan menyesatkan.
+  //
+  // Dipakai untuk decides apakah perlu push update agent (lihat
+  // `backend/src/pc/agent-versi.ts`).
+  versiAgent       String?
+
   sessions         Session[]
   uptime           UptimePc[]
 }

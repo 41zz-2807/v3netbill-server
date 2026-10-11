@@ -345,7 +345,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
   }
 
-  private async registerAgent(client: Socket, pcId: string, agentToken: string): Promise<boolean> {
+  private async registerAgent(client: Socket, pcId: string, agentToken: string, versiAgent?: string | null): Promise<boolean> {
     const isValid = await this.sessionService.validateAgentToken(pcId, agentToken);
     if (!isValid) {
       this.logger.warn(`Invalid agentToken untuk PC ${pcId} (socket ${client.id})`);
@@ -373,7 +373,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     // IP diamati dari koneksi socket (bukan diisi manual admin) supaya tetap
     // akurat walau PC klien memakai DHCP dan IP-nya berganti.
     const ipTerlihat = this.alamatIp(client);
-    await this.sessionService.registerPc(pcId, ipTerlihat);
+    await this.sessionService.registerPc(pcId, ipTerlihat, versiAgent);
     await this.kirimUlangSesiKeAgent(pcId);
     await this.broadcastPcUpdate();
 
@@ -574,11 +574,11 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   @SubscribeMessage('agent:register')
   async handleAgentRegister(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { pcId: string; agentToken: string },
+    @MessageBody() data: { pcId: string; agentToken: string; versiAgent?: string },
   ): Promise<{ success: boolean; message?: string }> {
-    const { pcId, agentToken } = data;
+    const { pcId, agentToken, versiAgent } = data;
 
-    const ok = await this.registerAgent(client, pcId, agentToken);
+    const ok = await this.registerAgent(client, pcId, agentToken, versiAgent);
     if (!ok) {
       return { success: false, message: 'Invalid agentToken' };
     }

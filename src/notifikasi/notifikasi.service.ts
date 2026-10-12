@@ -34,6 +34,28 @@ export function sensorNama(nama: string | null | undefined): string {
   return `${bersih.slice(0, 2)}***`;
 }
 
+
+/**
+ * Format detik jadi "1j 20m" / "45m" / "30d".
+ *
+ * ⚠️ Versi lokal, BUKAN `formatDuration` dari frontend: backend tidak punya
+ * akses ke helper itu, dan menariknya ke sini hanya akan menambah
+ * ketergantungan. Yang dipakai notifikasi hanya perlu survive, bukan
+ * presisi detik — jadi pembulatan ke menit sudah cukup.
+ */
+function formatDurasi(detik: number): string {
+  const d = Math.max(0, Math.floor(detik));
+  if (d < 60) return `${d} dtk`;
+  const menit = Math.floor(d / 60);
+  if (menit < 60) return `${menit}m`;
+  const jam = Math.floor(menit / 60);
+  if (jam < 24) {
+    const sisaMenit = menit % 60;
+    return sisaMenit > 0 ? `${jam}j ${sisaMenit}m` : `${jam}j`;
+  }
+  return `${Math.floor(jam / 24)}h ${jam % 24}j`;
+}
+
 @Injectable()
 export class NotifikasiService {
   private readonly logger = new Logger(NotifikasiService.name);
@@ -87,6 +109,76 @@ export class NotifikasiService {
    * disembunyikan — admin tetap bisa tahu siapa yang sedang main tanpa
    * membuat HP jadi sumber kebocoran kredensial.
    */
+  /**
+   * Kabari admin bahwa sesi berhenti karena KONEKSI AGENT TERPUTUS.
+   *
+   * 🔴 Bedanya dari notifikasi "sesi dimulai": di sini yang paling penting
+   * adalah "PC005 · Member bu*** · koneksi terputus, sisa 1j 20m dikembalikan".
+   * Sisa waktu yang dikembalikan adalah informasi yang paling operasional —
+   * kasir di luar area PC baru tahu kalau ada pelanggan yang kehilangan waktu.
+   *
+   * ⚠️ Nama member tetap disensor sama seperti notifikasi sesi dimulai.
+   * Notifikasi ini muncul di layar KUNCI HP, jadi identitas akun tidak boleh
+   * bocor penuh di sini juga.
+   */
+  async kirimSesiTerputus(
+    pc: { namaPc: string; tipe: AccountType; kodeUnik?: string | null; nama?: string | null },
+    sisaKembaliDetik: number,
+  ): Promise<void> {
+    try {
+      const perangkat = await this.prisma.perangkat.findMany({
+        where: { user: { role: Role.ADMIN } },
+        select: { id: true, token: true },
+      });
+
+      if (perangkat.length === 0) return;
+
+      const jenis = pc.tipe === AccountType.MEMBER ? 'Member' : 'Voucher';
+      const identitas =
+        pc.tipe === AccountType.MEMBER ? sensorNama(pc.nama) : (pc.kodeUnik ?? '-');
+
+      // Sisa 0 berarti tidak ada yang bisa dikembalikan (mis. sesi yang
+      // terputus setelah waktunya habis). Kalimatnya harus jujur, jangan
+      // menjanjikan pengembalian yang tidak terjadi.
+      const kembalian =
+        sisaKembaliDetik > 0 ? `sisa ${formatDurasi(sisaKembaliDetik)} dikembalikan` : 'tanpa sisa';
+
+      const pesan = {
+        judul: 'Koneksi terputus',
+        isi: `${jenis} ${identitas} · ${pc.namaPc} · ${kembalian}`,
+        data: { jenis: 'sesi_terputus', pc: pc.namaPc },
+        channelId: CHANNEL_ID,
+      };
+
+      const hasil = await Promise.all(perangkat.map((p) => this.fcm.kirim(p.token, pesan)));
+      const terkirim = hasil.filter((h) => h.ok).length;
+
+      const mati = hasil
+        .filter((h) => h.tokenMati)
+        .map((h, i) => perangkat[i].id);
+      if (mati.length > 0) {
+        await this.prisma.perangkat.deleteMany({ where: { id: { in: mati } } });
+        this.logger.log(`${mati.length} token FCM tidak valid lagi, dihapus`);
+      }
+
+      const gagal = hasil.filter((h) => !h.ok && !h.tokenMati);
+      if (terkirim > 0 || gagal.length > 0) {
+        this.logger.log(
+          `Notifikasi sesi terputus di ${pc.namaPc}: ${terkirim}/${perangkat.length} terkirim`,
+        );
+      }
+      for (const h of gagal) {
+        this.logger.warn(`FCM menolak: ${h.kode ?? '-'} ${h.pesan}`);
+      }
+    } catch (err) {
+      // ⚠️ Tidak pernah melempar. Sesi pelanggan sudah berhenti saat method ini
+      // dipanggil; notifikasi yang gagal tidak boleh mengubah apa pun.
+      this.logger.warn(
+        `Gagal mengirim notifikasi sesi terputus: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
   async kirimSesiMulai(
     pc: { namaPc: string; tipe: AccountType; kodeUnik?: string | null; nama?: string | null },
     sumber = 'PC',

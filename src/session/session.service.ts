@@ -77,7 +77,19 @@ export interface SessionGatewayEvents {
     account: { kodeUnik: string | null; nama: string | null; tipe: AccountType },
   ): void;
   emitSessionTick(pcId: string, sisaDetik: number): void;
-  emitSessionStop(pcId: string, alasan: AlasanStop): void;
+  /**
+   * Beri tahu agent bahwa sesinya berhenti, sekaligus kabari admin kalau
+   * penyebabnya koneksi terputus.
+   *
+   * ⚠️ `akun` dan `sisaKembaliDetik` opsional karena pemanggil lama tidak
+   * mengirimnya. Yang berasal dari `stopSession()` selalu mengirim keduanya.
+   */
+  emitSessionStop(
+    pcId: string,
+    alasan: AlasanStop,
+    akun?: { kodeUnik: string | null; nama: string | null; tipe: AccountType },
+    sisaKembaliDetik?: number,
+  ): void;
   broadcastPcUpdate(): Promise<void>;
   broadcastActivityLog(event: string, payload: Record<string, unknown>): void;
   /** Catat masalah pada tick sesi tanpa pernah melempar. */
@@ -1026,7 +1038,16 @@ export class SessionService implements OnModuleDestroy {
       },
     });
 
-    this.gatewayEvents?.emitSessionStop(session.pcId, alasan);
+    this.gatewayEvents?.emitSessionStop(
+      session.pcId,
+      alasan,
+      {
+        kodeUnik: session.account.kodeUnik,
+        nama: session.account.nama,
+        tipe: session.account.tipe,
+      },
+      sisaWaktuKembali,
+    );
     this.gatewayEvents?.broadcastActivityLog('session:stopped', {
       sessionId,
       pcId: session.pcId,

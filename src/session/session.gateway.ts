@@ -810,10 +810,59 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
   }
 
-  emitSessionStop(pcId: string, alasan: 'manual' | 'habis' | 'disconnect_timeout'): void {
+  emitSessionStop(
+    pcId: string,
+    alasan: 'manual' | 'habis' | 'disconnect_timeout',
+    akun?: { kodeUnik: string | null; nama: string | null; tipe: AccountType },
+    sisaKembaliDetik?: number,
+  ): void {
     const socketId = this.pcSocketMap.get(pcId);
     if (socketId) {
       this.server.to(socketId).emit('session:stop', { alasan });
+    }
+
+    // 🔴 Hanya "koneksi terputus" yang dikabarikan. Alasan lain sudah terlihat
+    // dari notifikasi sesi dimulai (waktu habis) atau memang aksi kasir
+    // sendiri, jadi mengabari keduanya hanya membuat notifikasi tidak berarti.
+    //
+    // ⚠️ `void` tanpa await: `emitSessionStop` dipanggil dari dalam
+    // `stopSession()`, dan menunggu FCM di sana akan menahan penghentian
+    // sesi. Notifikasi tidak boleh memperlESOAT. Kegagalan FCM sendiri
+    // sudah ditangkap di dalam service notifikasi.
+    if (alasan === 'disconnect_timeout' && akun) {
+      void this.kabarSesiTerputus(pcId, akun, sisaKembaliDetik ?? 0);
+    }
+  }
+
+  /**
+   * Kabari perangkat admin bahwa sesi berhenti karena koneksi agent terputus.
+   *
+   * Dibungkus try/catch sendiri supaya kegagalan notifikasi tidak pernah
+   * menjatuhkan proses — kelas bug yang sama sudah pernah kills server.
+   */
+  private async kabarSesiTerputus(
+    pcId: string,
+    akun: { kodeUnik: string | null; nama: string | null; tipe: AccountType },
+    sisaKembaliDetik: number,
+  ): Promise<void> {
+    try {
+      const pc = await this.prisma.pc.findUnique({
+        where: { id: pcId },
+        select: { namaPc: true },
+      });
+      await this.notifikasiService.kirimSesiTerputus(
+        {
+          namaPc: pc?.namaPc ?? 'PC',
+          tipe: akun.tipe,
+          kodeUnik: akun.kodeUnik,
+          nama: akun.nama,
+        },
+        sisaKembaliDetik,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Gagal mengirim notifikasi sesi terputus untuk PC ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 

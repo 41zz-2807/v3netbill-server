@@ -5,9 +5,9 @@ import { CreatePcDto } from './dto/create-pc.dto.js';
 import { GantiNamaPcDto } from './dto/ganti-nama-pc.dto.js';
 import { SetWattPcDto } from './dto/set-watt-pc.dto.js';
 import { SetRusakPcDto } from './dto/set-rusak-pc.dto.js';
+import { SetRustdeskPcDto } from './dto/set-rustdesk-pc.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
-import { CurrentUser } from '../common/decorators/current-user.decorator.js';
 import { Role } from '@prisma/client';
 
 @Controller('pcs')
@@ -110,5 +110,35 @@ export class PcController {
   @Roles(Role.ADMIN)
   async unlock(@Param('id') id: string) {
     return this.sessionService.unlockPc(id);
+  }
+
+  /**
+   * Set RustDesk password untuk PC ini.
+   *
+   * Endpoint publik (tanpa JWT), diverifikasi pakai `pcId` + `agentToken`
+   * yang dikirim body. Biasanya dipakai oleh MSI installer setelah agent
+   * terdaftar sukses. Hanya PC yang milik agent token tersebut yang akan
+   * terupdate, agar tidak ada yang bisa paksa-update PC lain.
+   *
+   * Body request:
+   *   pcId       — UUID PC (dari param URL)
+   *   agentToken — Token agent yang daftar (dari body, diverifikasi vs DB)
+   *   rustdeskPassword — Password akses takawasi yang akan di-hash dan disimpan
+   *
+   * Password akan di-hash pakai bcrypt (cost 10) sebelum disimpan ke DB.
+   * Hasil: `rustdeskPasswordHash` disimpan, `rustdeskId` di-generate UUID
+   * jika belum ada. Hanya role ADMIN di halaman PC yang boleh lihat hash
+   * tersebut melalui `GET /api/pcs`.
+   *
+   * ⚠️ Jangan kirim password plaintext ke frontend — hanya hash yang
+   * tampil di admin. Jika teknisi lupa, baru set ulang lewat installer MSI.
+   */
+  @Patch(':id/rustdesk')
+  @Public()
+  async setRustdesk(
+    @Param('id') id: string,
+    @Body() dto: SetRustdeskPcDto,
+  ) {
+    return this.pcService.setRustdesk(id, dto);
   }
 }

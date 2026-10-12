@@ -128,6 +128,9 @@ model Pc {
   // `backend/src/pc/agent-versi.ts`).
   versiAgent       String?
 
+  rustdeskId       String?     // UUID otomatis, tampil di halaman PC admin
+  rustdeskPasswordHash String?  // bcrypt hash, hanya dilihat admin
+
   sessions         Session[]
   uptime           UptimePc[]
 }

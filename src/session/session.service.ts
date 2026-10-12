@@ -295,7 +295,12 @@ export class SessionService implements OnModuleDestroy {
     return pc?.agentToken === agentToken;
   }
 
-  async registerPc(pcId: string, ipTerlihat?: string | null, versiAgent?: string | null): Promise<void> {
+  async registerPc(
+    pcId: string,
+    ipTerlihat?: string | null,
+    versiAgent?: string | null,
+    rustdeskId?: string | null,
+  ): Promise<void> {
     const runningSession = await this.prisma.session.findFirst({
       where: { pcId, status: SessionStatus.BERJALAN },
     });
@@ -331,6 +336,27 @@ export class SessionService implements OnModuleDestroy {
       });
       if (pc && pc.versiAgent !== bersih) {
         data.versiAgent = bersih;
+      }
+    }
+    // ⚠️ Pola yang SAMA persis dengan versiAgent, dan bukan kebetulan: ID RustDesk
+    // hanya boleh ditulis kalau benar-benar berubah atau belum pernah terisi.
+    // Agent yang belum punya RustDesk (atau yang `--get-id`-nya masih kosong
+    // karena RustDesk belum selesai|first run) mengirim string kosong — dan itu
+    // TIDAK boleh jadi alasan menghapus ID yang sudah benar.
+    //
+    // ID RustDesk dibaca dari `RustDesk.exe --get-id`, formatnya seperti
+    // "123 456 789" (spasi, bukan pemisah lain) jadi spasi WAJIB dibuang
+    // supaya tampilan di kolom PC rapi dan tidak terlipat.
+    if (rustdeskId && rustdeskId.trim()) {
+      const bersih = rustdeskId.trim().replace(/\s+/g, '').slice(0, 32);
+      if (bersih) {
+        const pc = await this.prisma.pc.findUnique({
+          where: { id: pcId },
+          select: { rustdeskId: true },
+        });
+        if (pc && pc.rustdeskId !== bersih) {
+          data.rustdeskId = bersih;
+        }
       }
     }
     await this.prisma.pc.update({ where: { id: pcId }, data });

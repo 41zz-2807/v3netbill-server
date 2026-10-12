@@ -1,15 +1,13 @@
-import { Injectable, NotFoundException, BadRequestException, ConflictException, InternalServerErrorException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { SessionStatus, AccountType } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service.js';
 import { CreatePcDto } from './dto/create-pc.dto.js';
 import { GantiNamaPcDto } from './dto/ganti-nama-pc.dto.js';
 import { SetRusakPcDto } from './dto/set-rusak-pc.dto.js';
-import { SetRustdeskPcDto } from './dto/set-rustdesk-pc.dto.js';
 import { statusPcDitampilkan } from './pc-status.js';
 import { LogBillingService } from '../log-billing/log-billing.service.js';
 import { SessionService } from '../session/session.service.js';
 import { randomUUID } from 'crypto';
-import bcrypt from 'bcrypt';
 
 export interface StatusPcRingkas {
   namaPc: string;
@@ -298,53 +296,5 @@ export class PcService {
     await this.sessionService.broadcastPcUpdate();
 
     return { ...hasil, sesiDihentikan };
-  }
-
-  /**
-   * Set RustDesk password untuk PC ini.
-   *
-   * Diverifikasi pakai `pcId` + `agentToken` dari body request.
-   * Password akan di-hash pakai bcrypt (cost 10) sebelum disimpan.
-   * `rustdeskId` di-generate UUID jika belum ada.
-   *
-   * ⚠️ Hasil hash hanya bisa dilihat role ADMIN di halaman PC.
-   * Jika teknisi lupa, baru set ulang lewat installer MSI.
-   */
-  async setRustdesk(id: string, dto: SetRustdeskPcDto): Promise<{ rustdeskId: string; hashed: boolean }> {
-    // 1. Cek PC ada
-    const pc = await this.prisma.pc.findUnique({ where: { id } });
-    if (!pc) {
-      throw new NotFoundException('PC not found');
-    }
-
-    // 2. Verifikasi agentToken cocok dengan PC ini dari DB
-    //    (hanya validasi dasar; full cek butuh session map di gateway)
-    if (pc.agentToken !== dto.agentToken) {
-      throw new BadRequestException('AgentToken tidak cocok dengan PC ini');
-    }
-
-    // 3. Hash password
-    let rustdeskPasswordHash: string;
-    try {
-      rustdeskPasswordHash = await bcrypt.hash(dto.rustdeskPassword, 10);
-    } catch (err) {
-      throw new InternalServerErrorException('Gagal hash password');
-    }
-
-    // 3. Simpan/Update ke database
-    //    - Generate rustdeskId UUID jika belum ada
-    //    - Simpan hash
-    const [updated] = await this.prisma.$transaction([
-      this.prisma.pc.update({
-        where: { id },
-        data: {
-          rustdeskId: pc.rustdeskId ?? randomUUID(),
-          rustdeskPasswordHash,
-        },
-        select: { rustdeskId: true, rustdeskPasswordHash: true },
-      }),
-    ]);
-
-    return { rustdeskId: updated.rustdeskId!, hashed: true };
   }
 }

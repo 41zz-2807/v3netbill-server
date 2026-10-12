@@ -363,7 +363,22 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     // agent:register. Tanpa penjaga ini tiap koneksi menulis lastHeartbeatAt
     // dua kali, mendorong pc_update dua kali, dan mengirim config OTP/PIN
     // bypass dua kali ke socket yang sama.
+    //
+    // 🔴 Dulu penjaga ini langsung `return true`, dan itu berarti versi agent
+    // serta ID RustDesk PERNAH dibuang tanpa pernah disimpan: handshake query
+    // arrive lebih dulu tanpa metadata, jadi saat event agent:register
+    // membawa versinya, socket sudah terdaftar dan pemanggilannya dilewati.
+    // Semua PC tampil kosong padahal agent melapor dengan benar.
+    //
+    // Jadi metadata TIDAK ikut dilewati. Dipisah ke `registerPcMetadata()`
+    // supaya heartbeat, status, dan broadcast tetap tidak ditulis dua kali.
     if (this.socketPcMap.get(client.id) === pcId) {
+      if (versiAgent || rustdeskId) {
+        await this.sessionService.registerPcMetadata(pcId, versiAgent, rustdeskId);
+        this.logger.log(
+          `Metadata agent untuk PC ${pcId}: versi=${versiAgent ?? '-'} rustdesk=${rustdeskId ?? '-'}`,
+        );
+      }
       return true;
     }
 
@@ -583,6 +598,13 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     @MessageBody() data: { pcId: string; agentToken: string; versiAgent?: string; rustdeskId?: string },
   ): Promise<{ success: boolean; message?: string }> {
     const { pcId, agentToken, versiAgent, rustdeskId } = data;
+
+    // ⚠️ Dicatat SEBELUM validasi token. Dulu tidak ada baris ini sama
+    // sekali, jadi ketika versi agent tak pernah tersimpan, log server tidak
+    // menunjukkan apa pun — penyebabnya terlihat jauh dari gejalanya.
+    this.logger.log(
+      `agent:register diterima untuk PC ${pcId} (versi=${versiAgent ?? 'kosong'}, rustdesk=${rustdeskId ?? 'kosong'})`,
+    );
 
     const ok = await this.registerAgent(client, pcId, agentToken, versiAgent, rustdeskId);
     if (!ok) {

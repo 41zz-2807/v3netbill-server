@@ -363,6 +363,61 @@ export class SessionService implements OnModuleDestroy {
     this.gatewayEvents?.broadcastPcUpdate();
   }
 
+  /**
+   * Simpan metadata yang dilaporkan agent (versi agent + ID RustDesk).
+   *
+   * ⚠️ Dipisah dari `registerPc()` dengan alasan yang sudah terbukti di
+   * produksi: handshake query didaftarkan lebih dulu, TANPA metadata, dan
+   * penjaga anti-duplikasi di gateway lalu mengembalikan `true` sebelum
+   * `registerPc()` sempat dipanggil lagi. Akibatnya versi agent dan ID
+   * RustDesk tidak pernah tersimpan sama sekali — semua PC tampil kosong
+   * padahal agent sudah melaporkannya dengan benar.
+   *
+   * Metode ini tidak menyentuh `lastHeartbeatAt`, `status`, atau
+   * `terakhirAktifAt`, dan tidak memancarkan broadcast — supaya penjaga
+   * anti-duplikasi tetap bekerja tanpa harus mengorbankan data.
+   */
+  async registerPcMetadata(
+    pcId: string,
+    versiAgent?: string | null,
+    rustdeskId?: string | null,
+  ): Promise<void> {
+    const data: Prisma.PcUpdateInput = {};
+
+    if (versiAgent && versiAgent.trim()) {
+      const bersih = versiAgent.trim().slice(0, 32);
+      const pc = await this.prisma.pc.findUnique({
+        where: { id: pcId },
+        select: { versiAgent: true },
+      });
+      if (pc && pc.versiAgent !== bersih) {
+        data.versiAgent = bersih;
+      }
+    }
+
+    // ⚠️ Spasi dibuang karena `RustDesk.exe --get-id` mencetak format
+    // "123 456 789". ID kosong TIDAK boleh menghapus ID yang sudah benar:
+    // RustDesk yang belum selesai first run akan melapor kosong awhile.
+    if (rustdeskId && rustdeskId.trim()) {
+      const bersih = rustdeskId.trim().replace(/\s+/g, '').slice(0, 32);
+      if (bersih) {
+        const pc = await this.prisma.pc.findUnique({
+          where: { id: pcId },
+          select: { rustdeskId: true },
+        });
+        if (pc && pc.rustdeskId !== bersih) {
+          data.rustdeskId = bersih;
+        }
+      }
+    }
+
+    // ⚠️ Tidak ada early return kalau `data` kosong — `pc.update` dengan
+    // objek kosong tetap aman, dan skip-nya di sini justru pernah membuat
+    // bug ini sulit dilacak.
+    if (Object.keys(data).length === 0) return;
+    await this.prisma.pc.update({ where: { id: pcId }, data });
+  }
+
   async heartbeat(pcId: string): Promise<void> {
     const session = await this.prisma.session.findFirst({
       where: { pcId, status: SessionStatus.BERJALAN },

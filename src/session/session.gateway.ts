@@ -28,6 +28,7 @@ import {
   NEXTCLOUD_FOLDER_BAVAAN,
 } from '../settings/nextcloud-keys.js';
 import { BYPASS_PIN_HASH_KEY } from '../settings/bypass-keys.js';
+import { AGENT_PREVENT_SLEEP_KEY } from '../settings/power-keys.js';
 
 /** Kunci Setting Nextcloud, dipakai untuk query `sendNextcloudConfigTo`. */
 const NEXTCLOUD_KEYS_DI_GATEWAY = [
@@ -408,6 +409,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     await this.sendOtpConfigTo(pcId, client.id);
     await this.sendBypassConfigTo(pcId, client.id);
     await this.sendNextcloudConfigTo(pcId, client.id);
+    await this.sendPowerConfigTo(pcId, client.id);
     return true;
   }
 
@@ -529,6 +531,37 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
         .emit('agent:nextcloud_config', { url, user, pass, folder, nama: pc?.namaPc ?? '' });
       terkirim++;
       this.logger.log(`Nextcloud config dikirim ke agent ${pcId} (${socketId})`);
+    }
+    return terkirim;
+  }
+
+  /** Kirim konfigurasi daya ke satu agent (dipakai saat register). */
+  private async sendPowerConfigTo(pcId: string, socketId: string): Promise<void> {
+    try {
+      const row = await this.prisma.setting.findUnique({
+        where: { key: AGENT_PREVENT_SLEEP_KEY },
+      });
+      // Default "true": kalau setting belum pernah disimpan, PC warnet tidak boleh
+      // tidur / mati layar / muncul screensaver.
+      const aktif = (row?.value ?? 'true').toLowerCase() === 'true';
+      this.server.to(socketId).emit('agent:power_config', { preventSleep: aktif });
+      this.logger.log(`Power config dikirim ke agent ${pcId} (preventSleep=${aktif})`);
+    } catch (err) {
+      this.logger.warn(
+        `Gagal mengirim Power config ke ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Dorong konfigurasi daya ke SEMUA agent yang tersambung. Dipanggil dari
+   * SettingsService setelah admin mengubah sakelar.
+   */
+  pushPowerConfig(aktif: boolean): number {
+    let terkirim = 0;
+    for (const [, socketId] of this.pcSocketMap.entries()) {
+      this.server.to(socketId).emit('agent:power_config', { preventSleep: aktif });
+      terkirim++;
     }
     return terkirim;
   }

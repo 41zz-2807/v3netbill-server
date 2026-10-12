@@ -10,6 +10,7 @@ import { ActivityLogService } from '../activity-log/activity-log.service.js';
 import { SessionGateway } from '../session/session.gateway.js';
 import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY, OTP_KEYS } from './otp-keys.js';
 import { BYPASS_PIN_HASH_KEY } from './bypass-keys.js';
+import { AGENT_PREVENT_SLEEP_KEY, POWER_KEYS } from './power-keys.js';
 import {
   NEXTCLOUD_URL_KEY,
   NEXTCLOUD_USER_KEY,
@@ -157,6 +158,9 @@ export class SettingsService implements OnApplicationBootstrap {
       // sudah cukup untuk membuat semua agent langsung memakai password baru.
       await this.pushNextcloudConfigToAgents();
     }
+    if (POWER_KEYS.includes(key)) {
+      await this.pushPowerConfigToAgents();
+    }
     return { key, value };
   }
 
@@ -197,6 +201,21 @@ export class SettingsService implements OnApplicationBootstrap {
       `Nextcloud config dipush ke ${terkirim} agent ` +
         `(url=${url ? 'terisi' : 'kosong'}, user=${user ? 'terisi' : 'kosong'}, ` +
         `password=${pass ? 'terisi' : 'kosong'}, folder=${folder || NEXTCLOUD_FOLDER_BAVAAN})`,
+    );
+    return terkirim;
+  }
+
+  /**
+   * Dorong konfigurasi daya PC ke semua agent aktif.
+   *
+   * `true` = PC tidak tidur, layar tidak mati, screensaver tidak muncul.
+   * `false` = dikembalikan ke pengaturan Windows normal.
+   */
+  async pushPowerConfigToAgents(): Promise<number> {
+    const aktif = ((await this.get(AGENT_PREVENT_SLEEP_KEY)) ?? 'true').toLowerCase() === 'true';
+    const terkirim = this.sessionGateway.pushPowerConfig(aktif);
+    this.logger.log(
+      `Power config dipush ke ${terkirim} agent (preventSleep=${aktif ? 'aktif' : 'nonaktif'})`,
     );
     return terkirim;
   }

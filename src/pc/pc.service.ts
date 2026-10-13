@@ -317,6 +317,7 @@ export class PcService {
   async setAutoUpdate(
     id: string,
     aktif: boolean,
+    alasan?: string,
   ): Promise<{
     id: string;
     namaPc: string;
@@ -357,6 +358,17 @@ export class PcService {
     // ⚠️ Nilai balik WAJIB dipakai. `false` berarti agent offline, dan flag-nya
     // tetap disimpan supaya agent yang nanti konek melanjutkannya sendiri.
     const terkirim = await this.sessionService.kirimAutoUpdateConfig(id, aktif);
+
+    // ⚠️ `alasan` dicatat, bukan diterima lalu dibuang.
+    //
+    // Menandai PC untuk pembaruan itu memblokir ability login PC itu, jadi
+    // "siapa yang memblokir PC mana, dan kenapa" adalah jejak audit. Field yang
+    // diterima tapi diam-diam dibuang lebih buruk daripada tidak ada: operator
+    // mengetik alasan lalu mengira tercatat, padahal tidak ada yang membacanya.
+    this.logBilling.tulis(aktif ? 'pc_auto_update_nyala' : 'pc_auto_update_mati', {
+      pc: pc.namaPc,
+      keterangan: alasan ?? '',
+    });
 
     // Layar PC dikunci supaya pelanggan tidak melihat form login yang pasti
     // ditolak. Sesi yang sedang berjalan TIDAK disentuh.

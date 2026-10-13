@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { SetAutoUpdatePcDto } from '../src/pc/dto/set-auto-update-pc.dto.js';
 import { PcService, bisaAutoUpdate } from '../src/pc/pc.service.js';
 
 /**
@@ -58,7 +61,12 @@ function buatPcService(opsi: {
     stopSession: vi.fn(async () => {}),
   };
 
-  const svc = new PcService(prisma as never, { catat: vi.fn() } as never, sessionService as never);
+  const tulisLog = vi.fn();
+  const svc = new PcService(
+    prisma as never,
+    { catat: vi.fn(), tulis: tulisLog, invalidateNamaPc: vi.fn() } as never,
+    sessionService as never,
+  );
   return { svc, prisma, update, findUnique, sessionService, kirimAutoUpdateConfig };
 }
 
@@ -205,5 +213,57 @@ describe('setAutoUpdate — mematikan', () => {
     await svc.setAutoUpdate('pc-1', false);
 
     expect(sessionService.kunciLayarPc).not.toHaveBeenCalled();
+  });
+});
+/**
+ * 🔴 Regresi: `@IsString()` tanpa `@IsOptional()` menolak `undefined`.
+ *
+ * Unit test di atas memanggil `PcService` langsung, jadi tidak pernah melewati
+ * `ValidationPipe`. Akibatnya endpoint-nya menolak request yang justru tidak
+ * mengirim `alasan` — dan UI tidak pernah bisa menyalakan flag sama sekali,
+ * padahal semua test hijau.
+ *
+ * Test ini menjalankan DTO lewat `validate()` yang sama dengan yang dipakai
+ * `ValidationPipe` global, karena itu lapisan tempat bugnya tinggal.
+ */
+describe('SetAutoUpdatePcDto — lewat ValidationPipe', () => {
+  async function validasi(body: unknown) {
+    const dto = plainToInstance(SetAutoUpdatePcDto, body);
+    return validate(dto);
+  }
+
+  it('tanpa alasan harus diterima — inilah yang di kirim UI', async () => {
+    const e = await validasi({ ids: ['a'], aktif: true });
+    expect(e).toHaveLength(0);
+  });
+
+  it('alasan kosong (string kosong) diterima', async () => {
+    const e = await validasi({ ids: ['a'], aktif: true, alasan: '' });
+    expect(e).toHaveLength(0);
+  });
+
+  it('alasan sampai 200 karakter diterima', async () => {
+    const e = await validasi({ ids: ['a'], aktif: true, alasan: 'x'.repeat(200) });
+    expect(e).toHaveLength(0);
+  });
+
+  it('alasan 201 karakter ditolak', async () => {
+    const e = await validasi({ ids: ['a'], aktif: true, alasan: 'x'.repeat(201) });
+    expect(e.map((x) => x.property)).toContain('alasan');
+  });
+
+  it('daftar kosong tetap ditolak', async () => {
+    const e = await validasi({ ids: [], aktif: true });
+    // ⚠️ Kunci constraint bukan 'message'. @ArrayNotEmpty menghasilkan constraint
+    // bernama 'arrayNotEmpty', jadi x.constraints?.message selalu undefined —
+    // tes ini sempat gagal bukan karena endpoint salah, tapi karena cara
+    // membaca jawabannya.
+    const pesan = e.flatMap((x) => Object.values(x.constraints ?? {}));
+    expect(pesan).toContain('Pilih minimal satu PC');
+  });
+
+  it('aktif harus boolean, string "true" ditolak', async () => {
+    const e = await validasi({ ids: ['a'], aktif: 'true' });
+    expect(e.map((x) => x.property)).toContain('aktif');
   });
 });

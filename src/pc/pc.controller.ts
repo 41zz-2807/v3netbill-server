@@ -96,7 +96,7 @@ export class PcController {
 
     for (const id of dto.ids) {
       try {
-        hasil.push(await this.pcService.setAutoUpdate(id, dto.aktif));
+        hasil.push(await this.pcService.setAutoUpdate(id, dto.aktif, dto.alasan));
       } catch (err) {
         // ⚠️ Satu PC gagal TIDAK boleh membatalkan sisanya. Kalau operator
         // memilih 5 PC dan satu versinya masih lama, PC lain ikut

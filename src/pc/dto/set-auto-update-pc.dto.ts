@@ -1,4 +1,4 @@
-import { ArrayNotEmpty, IsArray, IsBoolean, IsString, MaxLength } from 'class-validator';
+import { ArrayNotEmpty, IsArray, IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator';
 
 /**
  * Nyalakan / matikan flag pembaruan otomatis untuk BEBERAPA PC sekaligus.
@@ -26,6 +26,18 @@ export class SetAutoUpdatePcDto {
    * ⚠️ Dipakai hanya di log aktivitas. Ini bukan kode login, jadi bebas diisi
    * dan tidak disensor.
    */
+  // ⚠️ `@IsOptional()` WAJIB ada, dan `@IsString()` saja sudah cukup untuk
+  // MENOLAK request yang tidak mengirim `alasan`.
+  //
+  // `alasan` tidak punya nilai default, jadi ketika tidak dikirim ia `undefined`
+  // — dan `@IsString()` menolak `undefined`. Gejalanya: endpoint membalas 400
+  // "Alasan maksimal 200 karakter" untuk request yang justru tidak mengirim
+  // alasan sama sekali, dan UI yang memanggilnya tidak pernah bisa menyalakan
+  // flag sama sekali.
+  //
+  // Unit test tidak menangkap ini karena memanggil service langsung; yang
+  // menolak adalah `ValidationPipe` di lapisan HTTP.
+  @IsOptional()
   @IsString()
   @MaxLength(200, { message: 'Alasan maksimal 200 karakter' })
   alasan?: string;

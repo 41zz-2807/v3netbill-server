@@ -744,10 +744,20 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
     const valid = await this.prisma.pc.findFirst({
       where: { id: pcId, agentToken },
-      select: { id: true },
+      // ⚠️ `autoUpdate` ikut diambil, bukan cuma `id`. Tanpa itu agent PC
+      // yang tidak ditandai pun bisa menulis pesan dan persentase ke PC-nya
+      // sendiri, dan baris database jadi tidak mencerminkan kenyataan.
+      select: { id: true, autoUpdate: true },
     });
     if (!valid) {
       return { success: false, message: 'agentToken PC tidak valid' };
+    }
+    if (!valid.autoUpdate) {
+      return {
+        success: false,
+        message:
+          'PC ini tidak sedang ditandai untuk pembaruan — progres diabaikan',
+      };
     }
 
     const mentah = Number(data?.persen);

@@ -267,3 +267,73 @@ describe('SetAutoUpdatePcDto — lewat ValidationPipe', () => {
     expect(e.map((x) => x.property)).toContain('aktif');
   });
 });
+
+/**
+ * 🔴 Progres HANYA diterima dari PC yang sedang ditandai.
+ *
+ * Tanpa penjaga ini, agent PC mana pun yang punya token sah bisa menulis
+ * `autoUpdatePesan` dan `autoUpdatePercen` ke PC-nya sendiri meskipun PC itu tidak
+ * ditandai. Baris database jadi tidak mencerminkan kenyataan, dan ketika
+ * operator menandai PC itu kemudian, pesan basi bisa terbaca sebagai milik
+ * percobaan yang baru saja dimulai.
+ */
+describe('agent:auto_update_progress — guard flag', () => {
+  /** Bentuk gateway yang dipakai test: hanya bagian yang diuji. */
+  function gatewayDengan(valid: { id: string; autoUpdate: boolean } | null) {
+    const catat = vi.fn(async () => {});
+    const findFirst = vi.fn(async () => valid);
+    const g = {
+      prisma: { pc: { findFirst, update: vi.fn(async () => ({})) } },
+      catatProgresAutoUpdate: catat,
+      logger: { warn: vi.fn() },
+    };
+    return { g, catat, findFirst };
+  }
+
+  async function kirim(
+    g: ReturnType<typeof gatewayDengan>,
+    data: { pcId: string; agentToken: string; persen?: number; pesan?: string },
+  ) {
+    // ⚠️ Dipakai lewat PROTOTYPE, bukan export terpisah.
+    // Handler ini dekorator @SubscribeMessage pada kelas SessionGateway, jadi
+    // tidak ada yang meng-export-nya sebagai fungsi bebas.
+    const { SessionGateway } = await import('../src/session/session.gateway.js');
+    const proto = SessionGateway.prototype as unknown as Record<string, (...a: never[]) => unknown>;
+    const handler = proto.handleAutoUpdateProgress;
+    if (typeof handler !== 'function') throw new Error('handleAutoUpdateProgress tidak ditemukan');
+    return handler.call(g, {} as never, data as never);
+  }
+
+  it('PC tidak berflag -> progres DITOLAK dan tidak ditulis', async () => {
+    const { g, catat } = gatewayDengan({ id: 'a', autoUpdate: false });
+    const r = await kirim(g, { pcId: 'a', agentToken: 't', persen: 50, pesan: 'Mengunduh' });
+    expect(r.success).toBe(false);
+    expect(catat).not.toHaveBeenCalled();
+  });
+
+  it('PC berflag -> progres diterima dan ditulis', async () => {
+    const { g, catat } = gatewayDengan({ id: 'a', autoUpdate: true });
+    const r = await kirim(g, { pcId: 'a', agentToken: 't', persen: 50, pesan: 'Mengunduh' });
+    expect(r.success).toBe(true);
+    expect(catat).toHaveBeenCalledWith('a', 50, 'Mengunduh');
+  });
+
+  it('token salah -> ditolak tanpa menulis apa pun', async () => {
+    const { g, catat } = gatewayDengan(null);
+    const r = await kirim(g, { pcId: 'a', agentToken: 'salah' });
+    expect(r.success).toBe(false);
+    expect(catat).not.toHaveBeenCalled();
+  });
+
+  it('persen di luar 0..100 dijepit, bukan dipercaya', async () => {
+    const { g, catat } = gatewayDengan({ id: 'a', autoUpdate: true });
+    await kirim(g, { pcId: 'a', agentToken: 't', persen: 999 });
+    expect(catat).toHaveBeenCalledWith('a', 100, null);
+  });
+
+  it('pesan dipotong 200 karakter', async () => {
+    const { g, catat } = gatewayDengan({ id: 'a', autoUpdate: true });
+    await kirim(g, { pcId: 'a', agentToken: 't', pesan: 'x'.repeat(500) });
+    expect(catat.mock.calls[0][2]).toHaveLength(200);
+  });
+});

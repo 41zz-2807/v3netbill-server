@@ -512,6 +512,33 @@ export class SessionService implements OnModuleDestroy {
       }
     }
 
+    // 🔴 Sesi teknisi yang menggantung DITUTUP saat PC register.
+    //
+    // PC yang baru boot berarti tidak ada seorang pun yang sedang login —
+    // overlay ikut dimulai ulang, dan teknisi harus mengetik PIN lagi. Jadi
+    // baris `SesiTeknisi` dengan `selesaiAt` kosong pasti sudah usang.
+    //
+    // ⚠️ Tanpa baris ini, satu sesi yang gagal ditutup (service mati, PC
+    // reboot, PC diputus listrik) membuat PC itu **tidak pernah** ikut
+    // auto-matikan: `checkAutoShutdown` punya Pengaman 3b yang melewati PC
+    // dengan sesi teknisi aktif, dan pengaman itu memegang selamanya.
+    // Terverifikasi 14 Okt: satu baris menggantung dari 13 Okt membuat
+    // `testeer` lewat dari auto-matikan selama 13 jam.
+    const menggantung = await this.prisma.sesiTeknisi.findMany({
+      where: { pcId, selesaiAt: null },
+      select: { id: true, username: true },
+    });
+    if (menggantung.length > 0) {
+      await this.prisma.sesiTeknisi.updateMany({
+        where: { pcId, selesaiAt: null },
+        data: { selesaiAt: new Date() },
+      });
+      this.logger.log(
+        `PC ${pcId} register — sesi teknisi menggantung ditutup: ` +
+          menggantung.map((s) => s.username).join(', '),
+      );
+    }
+
     // ⚠️ Tidak ada early return kalau `data` kosong — `pc.update` dengan
     // objek kosong tetap aman, dan skip-nya di sini justru pernah membuat
     // bug ini sulit dilacak.

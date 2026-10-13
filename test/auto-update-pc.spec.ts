@@ -438,3 +438,85 @@ describe('agent:auto_update_progress — tahap batal melepas flag', () => {
     expect(update).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * 🔴 Sesi teknisi yang menggantung DITUTUP saat PC register.
+ *
+ * Tanpa ini, satu baris yang gagal ditutup — service mati, PC reboot, atau
+ * listrik putus — membuat PC itu tidak pernah ikut auto-matikan. Pengaman 3b
+ * di `checkAutoShutdown` melewati PC yang punya sesi teknisi aktif, dan
+ * pengaman itu memegang selamanya karena tidak ada yang menutupnya.
+ *
+ * Terverifikasi 14 Okt: satu baris menggantung dari 13 Okt membuat `testeer`
+ * lewat dari auto-matikan selama 13 jam.
+ */
+describe('registerPcMetadata — tutup sesi teknisi menggantung', () => {
+  /** Bangun SessionService palsu yang hanya mengeluarkan panggilan Prisma. */
+  function svcDengan(opts: {
+    versiLama?: string | null
+    autoUpdate?: boolean
+    sesiTeknisi?: { id: string; username: string }[]
+  } = {}) {
+    const { versiLama = '1.0.34.0', autoUpdate = false, sesiTeknisi = [] } = opts
+    const panggilan: string[] = []
+    const findFirst = vi.fn(async () => ({ id: 'pc-1', versiAgent: versiLama, autoUpdate, rustDeskId: null }))
+    const findMany = vi.fn(async () => sesiTeknisi)
+    const updateMany = vi.fn(async (a: unknown) => { panggilan.push('sesiTeknisi.updateMany'); return a })
+    const update = vi.fn(async (a: unknown) => { panggilan.push('pc.update'); return a })
+    const svc = {
+      prisma: {
+        pc: { findUnique: findFirst, update },
+        sesiTeknisi: { findMany, updateMany },
+      },
+      logger: { log: vi.fn() },
+      gatewayEvents: { broadcastPcUpdate: vi.fn(async () => {}) },
+    }
+    return { svc, panggilan, findMany, updateMany, update }
+  }
+
+  /** Panggil method asli lewat prototype, bukan salinan logika. */
+  async function daftar(svc: unknown, versi?: string) {
+    const { SessionService } = await import('../src/session/session.service.js')
+    const proto = SessionService.prototype as unknown as Record<string, (...a: never[]) => unknown>
+    const fn = proto.registerPcMetadata
+    if (typeof fn !== 'function') throw new Error('registerPcMetadata tidak ditemukan')
+    return fn.call(svc, 'pc-1', versi)
+  }
+
+  it('sesi teknisi menggantung -> ditutup semua', async () => {
+    const { svc, panggilan, findMany, updateMany } = svcDengan({
+      sesiTeknisi: [{ id: 'a', username: 'teknis' }, { id: 'b', username: 'tech' }],
+    })
+    await daftar(svc, '1.0.34.0')
+    expect(findMany).toHaveBeenCalledWith({ where: { pcId: 'pc-1', selesaiAt: null }, select: { id: true, username: true } })
+    expect(updateMany).toHaveBeenCalled()
+    expect(panggilan).toContain('sesiTeknisi.updateMany')
+  })
+
+  it('tidak ada sesi menggantung -> updateMany TIDAK dipanggil', async () => {
+    const { svc, updateMany } = svcDengan({ sesiTeknisi: [] })
+    await daftar(svc, '1.0.34.0')
+    expect(updateMany).not.toHaveBeenCalled()
+  })
+
+  it('sesi teknisi ditutup walau tidak ada metadata versi sama sekali', async () => {
+    const { svc, updateMany } = svcDengan({
+      versiLama: null,
+      sesiTeknisi: [{ id: 'a', username: 'teknis' }],
+    })
+    await daftar(svc, undefined)
+    expect(updateMany).toHaveBeenCalled()
+  })
+
+  it('versi naik dan sesi menggantung -> keduanya dikerjakan', async () => {
+    const { svc, panggilan } = svcDengan({
+      versiLama: '1.0.34.0',
+      autoUpdate: true,
+      sesiTeknisi: [{ id: 'a', username: 'teknis' }],
+    })
+    await daftar(svc, '1.0.35.0')
+    // Toggle dilepas (versi naik) DAN sesi teknisi ditutup.
+    expect(panggilan).toContain('sesiTeknisi.updateMany')
+    expect(panggilan).toContain('pc.update')
+  })
+})

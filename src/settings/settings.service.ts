@@ -11,6 +11,7 @@ import { SessionGateway } from '../session/session.gateway.js';
 import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY, OTP_KEYS } from './otp-keys.js';
 import { BYPASS_PIN_HASH_KEY } from './bypass-keys.js';
 import { AGENT_PREVENT_SLEEP_KEY, POWER_KEYS } from './power-keys.js';
+import { AGENT_AUTO_UPDATE_KEY, AUTO_UPDATE_KEYS } from './auto-update-keys.js';
 import {
   NEXTCLOUD_URL_KEY,
   NEXTCLOUD_USER_KEY,
@@ -161,6 +162,9 @@ export class SettingsService implements OnApplicationBootstrap {
     if (POWER_KEYS.includes(key)) {
       await this.pushPowerConfigToAgents();
     }
+    if (AUTO_UPDATE_KEYS.includes(key)) {
+      await this.pushAutoUpdateConfigToAgents();
+    }
     return { key, value };
   }
 
@@ -216,6 +220,57 @@ export class SettingsService implements OnApplicationBootstrap {
     const terkirim = this.sessionGateway.pushPowerConfig(aktif);
     this.logger.log(
       `Power config dipush ke ${terkirim} agent (preventSleep=${aktif ? 'aktif' : 'nonaktif'})`,
+    );
+    return terkirim;
+  }
+
+  /**
+   * Ambil semua yang dibutuhkan agent untuk memutuskan apakah perlu update.
+   *
+   * ⚠️ Endpoint ini TANPA JWT — agent tidak punya akun operator. Identitasnya
+   * `pcId` + `agentToken`, sama seperti `settings/verify-pin` dan `diagnosa`.
+   * Kalau PC atau tokennya tidak cocok, balas UnauthorizedException; jangan
+   * pernah balas "tidak ada pembaruan" untuk token asing, karena itu membuat
+   * penyerang bisa memetakan token mana yang sah.
+   *
+   * ⚠️ `ada` bermakna "ada MSI di server", BUKAN "agent harus update".
+   * Keputusan akhir ada di agent: ia yang tahu versi sendiri, dan ia yang punya
+   * penjaga sesi berjalan. Server tidak boleh memerintahkan install hanya
+   * karena versinya lebih tinggi — justru itu yang bisa memutus penagihan.
+   */
+  async cekPembaruanUntukAgent(pcId: string, agentToken: string): Promise<{
+    autoUpdate: boolean;
+    ada: boolean;
+    versi: string | null;
+    sha256: string | null;
+    ukuranBytes: number | null;
+  }> {
+    const pc = await this.prisma.pc.findUnique({ where: { id: pcId } });
+    if (!pc || pc.agentToken !== agentToken) {
+      throw new UnauthorizedException('agentToken PC tidak valid');
+    }
+
+    const meta = await this.getInstallerMeta();
+    return {
+      autoUpdate: ((await this.get(AGENT_AUTO_UPDATE_KEY)) ?? 'false').toLowerCase() === 'true',
+      ada: meta !== null,
+      versi: meta?.versionName ?? null,
+      sha256: meta?.sha256 ?? null,
+      ukuranBytes: meta?.sizeBytes ?? null,
+    };
+  }
+
+  /**
+   * Dorong status sakelar auto-update ke semua agent.
+   *
+   * Dipanggil dari `patchValue` supaya admin tidak perlu menunggu agent
+   * reconnect (jadwal cek terjadwal 6 jam sekali).
+   */
+  async pushAutoUpdateConfigToAgents(): Promise<number> {
+    const aktif = ((await this.get(AGENT_AUTO_UPDATE_KEY)) ?? 'false').toLowerCase() === 'true';
+    const terkirim = this.sessionGateway.pushAutoUpdateConfig(aktif);
+    this.logger.log(
+      `Auto-update config dipush ke ${terkirim} agent (aktif=${aktif ? 'ya' : 'tidak'})`,
     );
     return terkirim;
   }

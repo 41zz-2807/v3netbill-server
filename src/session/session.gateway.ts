@@ -29,6 +29,7 @@ import {
 } from '../settings/nextcloud-keys.js';
 import { BYPASS_PIN_HASH_KEY } from '../settings/bypass-keys.js';
 import { AGENT_PREVENT_SLEEP_KEY } from '../settings/power-keys.js';
+import { AGENT_AUTO_UPDATE_KEY } from '../settings/auto-update-keys.js';
 
 /** Kunci Setting Nextcloud, dipakai untuk query `sendNextcloudConfigTo`. */
 const NEXTCLOUD_KEYS_DI_GATEWAY = [
@@ -410,6 +411,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     await this.sendBypassConfigTo(pcId, client.id);
     await this.sendNextcloudConfigTo(pcId, client.id);
     await this.sendPowerConfigTo(pcId, client.id);
+    await this.sendAutoUpdateConfigTo(pcId, client.id);
     return true;
   }
 
@@ -564,6 +566,43 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       terkirim++;
     }
     return terkirim;
+  }
+
+  /**
+   * Dorong status sakelar auto-update ke semua agent.
+   *
+   * Dipanggil saat admin mengubah sakelar, supaya tidak perlu menunggu jadwal
+   * cek 6 jam. Agent yang sedang offline akan mendapatkannya saat register.
+   */
+  pushAutoUpdateConfig(aktif: boolean): number {
+    let terkirim = 0;
+    for (const [, socketId] of this.pcSocketMap.entries()) {
+      this.server.to(socketId).emit('agent:auto_update_config', { aktif });
+      terkirim++;
+    }
+    this.logger.log(
+      `Auto-update config dikirim ke ${terkirim} agent (aktif=${aktif ? 'ya' : 'tidak'})`,
+    );
+    return terkirim;
+  }
+
+  /**
+   * Kirim status sakelar auto-update ke satu agent (dipakai saat register),
+   * supaya agent yang baru konek langsung tahu apakah fiturnya boleh jalan
+   * tanpa menunggu jadwal cek enam jam.
+   */
+  private async sendAutoUpdateConfigTo(pcId: string, socketId: string): Promise<void> {
+    try {
+      const row = await this.prisma.setting.findUnique({
+        where: { key: AGENT_AUTO_UPDATE_KEY },
+      });
+      const aktif = (row?.value ?? 'false').toLowerCase() === 'true';
+      this.server.to(socketId).emit('agent:auto_update_config', { aktif });
+    } catch (err) {
+      this.logger.warn(
+        `Gagal mengirim Auto-update config ke ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   private async sendOtpConfigTo(pcId: string, socketId: string): Promise<void> {

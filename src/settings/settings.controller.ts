@@ -20,6 +20,7 @@ import { ChangePasswordDto } from './dto/change-password.dto.js';
 import { PinUninstallDto } from './dto/pin-uninstall.dto.js';
 import { PinBypassDto } from './dto/pin-bypass.dto.js';
 import { VerifyPinDto } from './dto/verify-pin.dto.js';
+import { AgentIdentitasDto } from './dto/agent-identitas.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { SessionGateway } from '../session/session.gateway.js';
@@ -252,5 +253,50 @@ export class SettingsController {
   @Post('verify-pin')
   async verifyPin(@Body() body: VerifyPinDto) {
     return this.settingsService.verifyPinUninstall(body.pcId, body.agentToken, body.pin);
+  }
+
+  /**
+   * Cek pembaruan agent — dipanggil agent sendiri, BUKAN operator.
+   *
+   * ⚠️ Tidak ada JWT di sini: agent adalah Windows Service tanpa akun operator.
+   * Identitasnya `pcId` + `agentToken`, persis seperti `verify-pin` dan
+   * `diagnosa`. Token yang salah dibalas 401, bukan "tidak ada pembaruan" —
+   * kalau tidak, siapa pun bisa memetakan token mana yang sah.
+   *
+   * ⚠️ Balasan TIDAK memerintahkan install. Agent yang tahu versinya sendiri,
+   * dan agent yang punya penjaga "jangan update kalau ada sesi berjalan".
+   * Server cuma berkata "sakelarnya nyala dan ada MSI versi begini".
+   */
+  @Public()
+  @Post('agent/cek-pembaruan')
+  async cekPembaruanAgent(@Body() body: AgentIdentitasDto) {
+    return this.settingsService.cekPembaruanUntukAgent(body.pcId, body.agentToken);
+  }
+
+  /**
+   * Unduh MSI untuk agent.
+   *
+   * Dipisah dari `cek-pembaruan` supaya agent bisa memeriksa dulu (beberapa
+   * byte) dan baru mengunduh 89 MB kalau memang perlu. Hash dicek agent
+   * SEBELUM memasang, jadi berkas yang terpotong di tengah jalan tidak akan
+   * pernah diserahkan ke msiexec.
+   */
+  @Public()
+  @Post('agent/unduh-installer')
+  async unduhInstallerAgent(@Body() body: AgentIdentitasDto, @Res() res: Response) {
+    const info = await this.settingsService.cekPembaruanUntukAgent(
+      body.pcId,
+      body.agentToken,
+    );
+    if (!info.ada || !info.versi) {
+      throw new BadRequestException('Belum ada installer terupload');
+    }
+    const meta = await this.settingsService.getInstallerMeta();
+    if (!meta) {
+      throw new BadRequestException('Belum ada installer terupload');
+    }
+    const filePath = this.settingsService.getInstallerFilePath(meta);
+    res.download(filePath, meta.filename);
+    return;
   }
 }

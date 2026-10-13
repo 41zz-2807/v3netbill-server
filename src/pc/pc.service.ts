@@ -337,7 +337,7 @@ export class PcService {
     if (aktif && !bisaAutoUpdate(pc.versiAgent)) {
       throw new BadRequestException(
         `PC ini masih versi ${pc.versiAgent ?? 'tidak diketahui'} dan belum bisa memperbarui dirinya. ` +
-          'Pasang versi 1.0.26.0 atau lebih baru dulu secara manual, baru tandai untuk pembaruan.',
+          'Pasang versi 1.0.27.0 atau lebih baru dulu secara manual, baru tandai untuk pembaruan.',
       );
     }
 
@@ -391,7 +391,17 @@ export class PcService {
  * terlewat.
  */
 export function bisaAutoUpdate(versiAgent: string | null | undefined): boolean {
-  const min = [1, 0, 26, 0];
+  // 🔴 1.0.27.0, BUKAN 1.0.26.0.
+  //
+  // 1.0.26.0 memahami event config, jadi kelihatannya cukup -- tapi tidak punya
+  // ForceReboot.-msiexec selesai tanpa restart, versi agent tidak naik, dan
+  // flag di server tidak pernah lepas karena pelepasan dibuat dari kenaikan
+  // versi. Akibatnya PC menolak sesi, dilewati auto-shutdown, dan tidak akan
+  // pernah update lagi: terkunci sampai operator membuka Halaman PC.
+  //
+  // Jadi ambangnya harus versi yang updater-nya benar-benar bisa menyelesaikan
+  // satu putaran sampai restart, bukan versi yang sekadar punya kode updater.
+  const min = [1, 0, 27, 0];
   const bagian = (versiAgent ?? '').trim().split('.');
   if (bagian.length < 2 || bagian.length > 4) return false;
 

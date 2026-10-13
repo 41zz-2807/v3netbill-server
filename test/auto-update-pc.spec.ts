@@ -71,27 +71,35 @@ function buatPcService(opsi: {
 }
 
 /** PATCH /pcs/auto-update memanggil setAutoUpdate per id. */
-const PC_BISA = { id: 'pc-1', namaPc: 'PC001', versiAgent: '1.0.26.0' };
+const PC_BISA = { id: 'pc-1', namaPc: 'PC001', versiAgent: '1.0.27.0' };
 const PC_LAMA = { id: 'pc-2', namaPc: 'PC002', versiAgent: '1.0.24.0' };
 
 describe('bisaAutoUpdate', () => {
-  it('versi 1.0.26.0 dan lebih baru bisa', () => {
-    expect(bisaAutoUpdate('1.0.26.0')).toBe(true);
+  it('versi 1.0.27.0 dan lebih baru bisa', () => {
     expect(bisaAutoUpdate('1.0.27.0')).toBe(true);
+    expect(bisaAutoUpdate('1.0.28.0')).toBe(true);
     expect(bisaAutoUpdate('1.1.0')).toBe(true);
     expect(bisaAutoUpdate('2.0.0')).toBe(true);
   });
 
-  it('versi sebelum 1.0.26.0 tidak bisa', () => {
+  // 🔴 1.0.26.0 punya event config tapi TIDAK punya ForceReboot. Menandainya
+  // akan membuat msiexec selesai tanpa restart, versi tidak naik, dan flag
+  // tidak pernah lepas -- PC terkunci sampai operator membuka Halaman PC.
+  it('1.0.26.0 DITOLAK meski punya kode updater', () => {
+    expect(bisaAutoUpdate('1.0.26.0')).toBe(false);
+    expect(bisaAutoUpdate('1.0.26.9')).toBe(false);
+  });
+
+  it('versi sebelum 1.0.27.0 tidak bisa', () => {
     expect(bisaAutoUpdate('1.0.25.0')).toBe(false);
     expect(bisaAutoUpdate('1.0.24.0')).toBe(false);
     expect(bisaAutoUpdate('1.0.9.0')).toBe(false);
   });
 
-  // 🔴 Jebakan yang paling mudah lolos: "1.0.100.0" vs "1.0.26.0".
+  // 🔴 Jebakan yang paling mudah lolos: "1.0.100.0" vs "1.0.27.0".
   //
   // Secara leksikografis "1" datang sebelum "2", jadi perbandingan string
-  // menyimpulkan 1.0.100.0 LEBIH KECIL dari 1.0.26.0 dan menolak PC itu —
+  // menyimpulkan 1.0.100.0 LEBIH KECIL dari 1.0.27.0 dan menolak PC itu —
   // padahal 100 jelas lebih besar dari 26. Gejalanya di produksi: PC versi
   // tinggi ditolak untuk update, dan tidak ada pesan yang mengarah ke
   // perbandingan versi.
@@ -110,9 +118,9 @@ describe('bisaAutoUpdate', () => {
     expect(bisaAutoUpdate('')).toBe(false);
     expect(bisaAutoUpdate('   ')).toBe(false);
     expect(bisaAutoUpdate('abc')).toBe(false);
-    expect(bisaAutoUpdate('1.0.26.0-rc1')).toBe(false);
+    expect(bisaAutoUpdate('1.0.27.0-rc1')).toBe(false);
     expect(bisaAutoUpdate('1.0')).toBe(false);
-    expect(bisaAutoUpdate('1.0.26.0.0')).toBe(false);
+    expect(bisaAutoUpdate('1.0.27.0.0')).toBe(false);
   });
 });
 
@@ -163,7 +171,7 @@ describe('setAutoUpdate — menyalakan', () => {
   it('PC versi lama ditolak dengan pesan yang menjelaskan apa yang harus dilakukan', async () => {
     const { svc, update } = buatPcService({ pc: PC_LAMA });
 
-    await expect(svc.setAutoUpdate('pc-2', true)).rejects.toThrow(/1\.0\.26\.0/);
+    await expect(svc.setAutoUpdate('pc-2', true)).rejects.toThrow(/1\.0\.27\.0/);
     expect(update).not.toHaveBeenCalled();
   });
 

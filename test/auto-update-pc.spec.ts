@@ -392,6 +392,19 @@ describe('agent:auto_update_progress — tahap batal melepas flag', () => {
     });
   });
 
+  // 🔴 Ditemukan lewat uji langsung, bukan lewat baca kode. Operator menandai
+  // PC yang sudah versi terbaru, agent memutuskan tidak ada yang perlu
+  // diunduh, dan TIDAK melapor apa pun -- sehingga PC-nya tertahan tanpa jalan
+  // keluar kecuali Halaman PC. Terverifikasi di produksi 13 Okt.
+  it('tahap "diam" -> flag dilepas, PC tidak tertahan sia-sia', async () => {
+    const { g, update } = gatewayDengan(VALID);
+    await kirim(g, { pcId: 'a', agentToken: 't', tahap: 'diam', persen: 100 });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'a' },
+      data: expect.objectContaining({ autoUpdate: false }),
+    });
+  });
+
   it('tahap "gagal" -> flag TIDAK dilepas', async () => {
     const { g, update } = gatewayDengan(VALID);
     await kirim(g, { pcId: 'a', agentToken: 't', tahap: 'gagal', persen: 100 });

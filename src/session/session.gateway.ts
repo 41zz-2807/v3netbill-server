@@ -785,15 +785,29 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     // Tahap gagal sengaja TIDAK melepas flag: operator tetap memegang
     // kendali, dan PC yang tidak bisa dilogin lebih baik daripada update
     // berulang yang membanjiri server tanpa pernah berhasil.
-    if (tahap === 'batal') {
+    if (tahap === 'batal' || tahap === 'diam') {
+      // 🔴 "diam" ikut melepas flag, dan ini ditemukan lewat uji langsung,
+      // bukan lewat baca kode.
+      //
+      // Operator bisa menandai PC yang sudah versi terbaru. Agent lalu
+      // memutuskan tidak ada yang perlu diunduh dan... tidak melapor apa pun.
+      // Akibatnya PC itu menolak sesi, dilewati auto-shutdown, dan tidak akan
+      // pernah update: terkunci tanpa jalan keluar kecuali Halaman PC.
+      // Terverifikasi di produksi 13 Okt — flag menyala, persen 0, tidak ada
+      // yang terjadi.
+      //
+      // "Tidak ada yang perlu dilakukan" harus berarti "berhenti", sama
+      // seperti "dibatalkan".
+      const alasanPesan =
+        tahap === 'diam' ? 'PC sudah versi terbaru' : 'Dibatalkan teknisi';
       await this.prisma.pc.update({
         where: { id: pcId },
-        data: { autoUpdate: false, autoUpdatePesan: 'Dibatalkan teknisi', autoUpdatePercen: null },
+        data: { autoUpdate: false, autoUpdatePesan: alasanPesan, autoUpdatePercen: null },
       });
-      this.broadcastActivityLog('pc_auto_update_batal', {
-        pc: valid.namaPc ?? null,
-        detail: { pc: pcId, oleh: 'teknisi' },
-      });
+      this.broadcastActivityLog(
+        tahap === 'diam' ? 'pc_auto_update_nolperubahan' : 'pc_auto_update_batal',
+        { pc: valid.namaPc ?? null, detail: { pc: pcId } },
+      );
     }
     return { success: true };
   }

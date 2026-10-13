@@ -11,7 +11,6 @@ import { SessionGateway } from '../session/session.gateway.js';
 import { OTP_BOT_TOKEN_KEY, OTP_CHAT_ID_KEY, OTP_KEYS } from './otp-keys.js';
 import { BYPASS_PIN_HASH_KEY } from './bypass-keys.js';
 import { AGENT_PREVENT_SLEEP_KEY, POWER_KEYS } from './power-keys.js';
-import { AGENT_AUTO_UPDATE_KEY, AUTO_UPDATE_KEYS } from './auto-update-keys.js';
 import {
   NEXTCLOUD_URL_KEY,
   NEXTCLOUD_USER_KEY,
@@ -162,9 +161,6 @@ export class SettingsService implements OnApplicationBootstrap {
     if (POWER_KEYS.includes(key)) {
       await this.pushPowerConfigToAgents();
     }
-    if (AUTO_UPDATE_KEYS.includes(key)) {
-      await this.pushAutoUpdateConfigToAgents();
-    }
     return { key, value };
   }
 
@@ -250,29 +246,20 @@ export class SettingsService implements OnApplicationBootstrap {
       throw new UnauthorizedException('agentToken PC tidak valid');
     }
 
+    // ⚠️ Sumber kebenaran adalah FLAG PER-PC (`Pc.autoUpdate`), bukan Setting.
+    // Setting global sudah dihapus karena menyalakannya akan menggerakkan
+    // semua agent sekaligus — termasuk PC yang sedang dipakai pelanggan.
+    //
+    // Agent boleh bertanya "apakah PC saya ditandai?", tapi tidak pernah boleh
+    // ditanya "apakah pembaruan otomatis diizinkan di seluruh warnet?".
     const meta = await this.getInstallerMeta();
     return {
-      autoUpdate: ((await this.get(AGENT_AUTO_UPDATE_KEY)) ?? 'false').toLowerCase() === 'true',
+      autoUpdate: pc.autoUpdate,
       ada: meta !== null,
       versi: meta?.versionName ?? null,
       sha256: meta?.sha256 ?? null,
       ukuranBytes: meta?.sizeBytes ?? null,
     };
-  }
-
-  /**
-   * Dorong status sakelar auto-update ke semua agent.
-   *
-   * Dipanggil dari `patchValue` supaya admin tidak perlu menunggu agent
-   * reconnect (jadwal cek terjadwal 6 jam sekali).
-   */
-  async pushAutoUpdateConfigToAgents(): Promise<number> {
-    const aktif = ((await this.get(AGENT_AUTO_UPDATE_KEY)) ?? 'false').toLowerCase() === 'true';
-    const terkirim = this.sessionGateway.pushAutoUpdateConfig(aktif);
-    this.logger.log(
-      `Auto-update config dipush ke ${terkirim} agent (aktif=${aktif ? 'ya' : 'tidak'})`,
-    );
-    return terkirim;
   }
 
   async changeOwnPassword(

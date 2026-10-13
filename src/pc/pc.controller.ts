@@ -5,6 +5,7 @@ import { CreatePcDto } from './dto/create-pc.dto.js';
 import { GantiNamaPcDto } from './dto/ganti-nama-pc.dto.js';
 import { SetWattPcDto } from './dto/set-watt-pc.dto.js';
 import { SetRusakPcDto } from './dto/set-rusak-pc.dto.js';
+import { SetAutoUpdatePcDto } from './dto/set-auto-update-pc.dto.js';
 import { Roles } from '../common/decorators/roles.decorator.js';
 import { Public } from '../common/decorators/public.decorator.js';
 import { CurrentUser } from '../common/decorators/current-user.decorator.js';
@@ -66,6 +67,59 @@ export class PcController {
   @Roles(Role.ADMIN)
   async setRusak(@Param('id') id: string, @Body() dto: SetRusakPcDto) {
     return this.pcService.setRusak(id, dto);
+  }
+
+  /**
+   * Nyalakan / matikan flag pembaruan otomatis untuk beberapa PC. ADMIN saja.
+   *
+   * ⚠️ Bentuknya multi-select (`ids: string[]`) dan ini disengaja: operator
+   * praktisnya menekan "Perbarui semua PC" sekali saat warnet tutup, bukan
+   * satu per satu. Yang tetap dijamin adalah hanya PC di daftar itu yang
+   * tersentuh — PC lain tidak menerima apa pun, dan tidak ada sakelar global
+   * yang bisa menyalakan semuanya sekaligus.
+   *
+   * ⚠️ Path-nya **tidak** `:id/rusak`-like karena ini bukan per-PC. Menghapus
+   * `:id` dari depan itu penting: kalau tidak, `pcs/auto-update` akan
+   * tertangkap `:id` dan parameternya selalu `undefined`.
+   */
+  @Patch('auto-update')
+  @Roles(Role.ADMIN)
+  async setAutoUpdate(@Body() dto: SetAutoUpdatePcDto) {
+    const hasil: Array<{
+      id: string;
+      namaPc: string;
+      autoUpdate: boolean;
+      terkirim: boolean;
+      versiAgent: string | null;
+      ditolak?: string;
+    }> = [];
+
+    for (const id of dto.ids) {
+      try {
+        hasil.push(await this.pcService.setAutoUpdate(id, dto.aktif));
+      } catch (err) {
+        // ⚠️ Satu PC gagal TIDAK boleh membatalkan sisanya. Kalau operator
+        // memilih 5 PC dan satu versinya masih lama, PC lain ikut
+        // gagal "tidak ada yang diperbarui" dan operator tidak tahu mana
+        // yang berhasil.
+        hasil.push({
+          id,
+          namaPc: id,
+          autoUpdate: false,
+          terkirim: false,
+          versiAgent: null,
+          ditolak: err instanceof Error ? err.message : String(err),
+        });
+      }
+    }
+
+    const berhasil = hasil.filter((h) => !h.ditolak).length;
+    return {
+      diminta: dto.ids.length,
+      berhasil,
+      ditolak: hasil.length - berhasil,
+      hasil,
+    };
   }
 
   /**

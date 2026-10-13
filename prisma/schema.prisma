@@ -99,6 +99,38 @@ model Pc {
   // diubah per PC lewat halaman PC Management.
   watt             Int      @default(150)
 
+  // 🔴 PC ini sedang disiapkan untuk pembaruan otomatis.
+  //
+  // ⚠️ INI BUKAN Setting global. Sebelumnya desainnya satu sakelar untuk
+  // seluruh PC, dan itu dibatalkan: menyalakannya akan menggerakkan semua
+  // agent yang tersambung, termasuk PC yang sedang dipakai pelanggan, dan
+  // operator bisa salah klik lalu seluruh PC bergerak bersamaan.
+  // Flag per-PC membuat mustahil menyentuh PC yang tidak dipilih.
+  //
+  // Selama flag ini nyala:
+  //   - sesi baru DITOLAK (login layar PC, dashboard, dan buat voucher),
+  //     tapi sesi yang SEDANG berjalan dibiarkan — update menunggu-dia
+  //     selesai, dan baru jalan begitu pelanggan menekan STOP;
+  //   - auto-shutdown DILEWATI, karena PC harus tetap menyala selama
+  //     menunggu sesi selesai lalu mengunduh 89 MB;
+  //   - agent menerima agent:auto_update_config dan mengerjakan update;
+  //   - overlay menampilkan peringatan + progres supaya tidak ada yang
+  //     mencabut listrik di tengah pemasangan.
+  //
+  // ⚠️ Berpisah dari `rusak` dengan sengaja. `rusak` menyembunyikan PC dari
+  // dashboard, halaman login, dan mobile — supaya operator tidak melihat PC
+  // yang masih bisa dipakai. Flag ini justru PC yang MASIH terlihat, cuma
+  // menolak sesi sementara.
+  autoUpdate       Boolean  @default(false)
+
+  // Hasil percobaan update terakhir, supaya operator bisa melihat PC mana
+  // yang macet tanpa harus naik ke PC tersebut.
+  //
+  // ⚠️ `autoUpdatePercen` 0..100 dipakai untuk timeline progres di Halaman PC.
+  autoUpdatePesan   String?
+  autoUpdatePercen  Int?
+  autoUpdateWaktu   DateTime?
+
   // ⚠️ Kapan PC ini terakhir kali "dipakai". Dipakai untuk menghitung
   // hitung mundur auto-matikan: PC idle selama `Setting.auto_shutdown_menit`
   // menit dimatikan otomatis.

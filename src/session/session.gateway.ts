@@ -29,7 +29,6 @@ import {
 } from '../settings/nextcloud-keys.js';
 import { BYPASS_PIN_HASH_KEY } from '../settings/bypass-keys.js';
 import { AGENT_PREVENT_SLEEP_KEY } from '../settings/power-keys.js';
-import { AGENT_AUTO_UPDATE_KEY } from '../settings/auto-update-keys.js';
 
 /** Kunci Setting Nextcloud, dipakai untuk query `sendNextcloudConfigTo`. */
 const NEXTCLOUD_KEYS_DI_GATEWAY = [
@@ -569,38 +568,74 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   }
 
   /**
-   * Dorong status sakelar auto-update ke semua agent.
+   * Kirim status pembaruan otomatis ke SATU agent.
    *
-   * Dipanggil saat admin mengubah sakelar, supaya tidak perlu menunggu jadwal
-   * cek 6 jam. Agent yang sedang offline akan mendapatkannya saat register.
+   * ⚠️ Per-PC, BUKAN broadcast. Konsep awal memakai sakelar global dan itu
+   * dibatalkan: menyalakannya akan menggerakkan semua agent yang tersambung,
+   * termasuk PC yang sedang dipakai pelanggan.
+   *
+   * @returns true kalau benar-benar terkirim; false berarti agent offline.
+   *   Pemanggil TIDAK boleh menganggap flag "sudah dikirim" kalau false —
+   *   PC itu tidak akan diberi tahu, dan update baru jalan saat agent konek
+   *   lagi (waktu itu flag-nya masih tersimpan, jadi agent melanjutkannya).
    */
-  pushAutoUpdateConfig(aktif: boolean): number {
-    let terkirim = 0;
-    for (const [, socketId] of this.pcSocketMap.entries()) {
-      this.server.to(socketId).emit('agent:auto_update_config', { aktif });
-      terkirim++;
+  async kirimAutoUpdateConfig(pcId: string, aktif: boolean): Promise<boolean> {
+    const socketId = this.pcSocketMap.get(pcId);
+    if (!socketId) {
+      this.logger.log(`Auto-update config untuk ${pcId} tidak terkirim: agent offline`);
+      return false;
     }
-    this.logger.log(
-      `Auto-update config dikirim ke ${terkirim} agent (aktif=${aktif ? 'ya' : 'tidak'})`,
-    );
-    return terkirim;
+    this.server.to(socketId).emit('agent:auto_update_config', { aktif });
+    this.logger.log(`Auto-update config dikirim ke ${pcId} (aktif=${aktif ? 'ya' : 'tidak'})`);
+    return true;
   }
 
   /**
-   * Kirim status sakelar auto-update ke satu agent (dipakai saat register),
-   * supaya agent yang baru konek langsung tahu apakah fiturnya boleh jalan
-   * tanpa menunggu jadwal cek enam jam.
+   * Catat progres update yang dilaporkan agent, supaya timeline di Halaman PC
+   * bergerak tanpa perlu reload.
+   *
+   * ⚠️ Sengaja tidak memicu `broadcastPcUpdate()` untuk setiap persen. Progres
+   * datang berkali-kali per detik, dan setiap broadcast itu query seluruh PC
+   * beserta sesi — jadi satu PC yang mengunduh 89 MB bisa jadi alasan seluruh
+   * dashboard melambat.
+   */
+  async catatProgresAutoUpdate(
+    pcId: string,
+    persen: number | null,
+    pesan: string | null,
+  ): Promise<void> {
+    try {
+      await this.prisma.pc.update({
+        where: { id: pcId },
+        data: { autoUpdatePercen: persen, autoUpdatePesan: pesan, autoUpdateWaktu: new Date() },
+      });
+    } catch (err) {
+      this.logger.warn(
+        `Gagal menyimpan progres auto-update ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Kirim status pembaruan otomatis ke satu agent (dipakai saat register),
+   * supaya agent yang baru konek langsung tahu apakah PC-nya sedang ditandai
+   * untuk pembaruan — dan langsung melanjutkan kalau update sebelumnya gagal
+   * karena mati listrik.
+   *
+   * ⚠️ Bacanya dari FLAG PER-PC, bukan dari Setting. Setting global sudah
+   * dihapus; kalau masih dibaca di sini, PC yang operator tidak pilih ikut
+   * bergerak.
    */
   private async sendAutoUpdateConfigTo(pcId: string, socketId: string): Promise<void> {
     try {
-      const row = await this.prisma.setting.findUnique({
-        where: { key: AGENT_AUTO_UPDATE_KEY },
+      const pc = await this.prisma.pc.findUnique({
+        where: { id: pcId },
+        select: { autoUpdate: true },
       });
-      const aktif = (row?.value ?? 'false').toLowerCase() === 'true';
-      this.server.to(socketId).emit('agent:auto_update_config', { aktif });
+      this.server.to(socketId).emit('agent:auto_update_config', { aktif: pc?.autoUpdate === true });
     } catch (err) {
       this.logger.warn(
-        `Gagal mengirim Auto-update config ke ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
+        `Gagal mengirim auto-update config ke ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -682,6 +717,44 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     if (!ok) {
       return { success: false, message: 'Invalid agentToken' };
     }
+    return { success: true };
+  }
+
+  /**
+   * Progres pembaruan otomatis yang dilaporkan agent.
+   *
+   * ⚠️ Token divalidasi ulang, bukan percaya `pcId` dari payload saja —
+   * tanpa itu siapa pun yang terhubung ke namespace `/session` bisa menulis
+   * progres palsu ke PC mana pun yang ia sebut.
+   *
+   * ⚠️ `persen` dibatasi 0..100 di sini, bukan dipercaya apa adanya. Nilai
+   * di luar itu akan menggambar timeline yang lebih dari penuh atau negatif
+   * di Halaman PC, dan itu kelihatan seperti bug tampilan padahal sumbernya
+   * payload.
+   */
+  @SubscribeMessage('agent:auto_update_progress')
+  async handleAutoUpdateProgress(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { pcId: string; agentToken: string; persen?: number; pesan?: string },
+  ): Promise<{ success: boolean; message?: string }> {
+    const pcId = String(data?.pcId ?? '');
+    const agentToken = String(data?.agentToken ?? '');
+    if (!pcId || !agentToken) {
+      return { success: false, message: 'pcId dan agentToken wajib diisi' };
+    }
+    const valid = await this.prisma.pc.findFirst({
+      where: { id: pcId, agentToken },
+      select: { id: true },
+    });
+    if (!valid) {
+      return { success: false, message: 'agentToken PC tidak valid' };
+    }
+
+    const mentah = Number(data?.persen);
+    const persen = Number.isFinite(mentah) ? Math.max(0, Math.min(100, Math.round(mentah))) : null;
+    const pesan = typeof data?.pesan === 'string' ? data.pesan.slice(0, 200) : null;
+
+    await this.catatProgresAutoUpdate(pcId, persen, pesan);
     return { success: true };
   }
 

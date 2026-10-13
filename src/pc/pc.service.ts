@@ -297,4 +297,101 @@ export class PcService {
 
     return { ...hasil, sesiDihentikan };
   }
+
+  /**
+   * Nyalakan / matikan flag "siap pembaruan otomatis" untuk satu PC.
+   *
+   * ⚠️ Berbeda dari `setRusak()`: sesi yang sedang berjalan **TIDAK**
+   * dihentikan. Ini keputusan operator — menolak toggle karena ada sesi akan
+   * terasa seperti sistem tidak mau melayani pelanggan. Toggle tetap bisa ON,
+   * dan update akan berjalan begitu pelanggan menekan STOP.
+   *
+   * Yang dikunci saat flag aktif bukan PC-nya, tapi **aksinya**: sesi baru
+   * ditolak di `createSessionAndStart()` dan auto-shutdown dilewati. PC tetap
+   * terlihat di dashboard supaya kasir tahu kenapa tidak bisa dilogin.
+   *
+   * ⚠️ PC yang ditandai `rusak` tidak boleh mendapat flag ini. Keduanya
+   * artinya "PC ini sedang tidak dipakai", jadi menumpuknya hanya membuat
+   * operator perlu mematikan dua sakelar untuk mengembalikannya.
+   */
+  async setAutoUpdate(
+    id: string,
+    aktif: boolean,
+  ): Promise<{
+    id: string;
+    namaPc: string;
+    autoUpdate: boolean;
+    terkirim: boolean;
+    versiAgent: string | null;
+  }> {
+    const pc = await this.prisma.pc.findUnique({ where: { id } });
+    if (!pc) {
+      throw new NotFoundException('PC not found');
+    }
+
+    // ⚠️ PC lama tidak punya kode updater. Menyalakan flag untuknya berarti PC
+    // menolak sesi, tidak pernah dimatikan otomatis, DAN tidak akan pernah
+    // update — terkunci selamanya. Jadi ditolak di sini, bukan menunggu
+    // kegagalan yang jauh lebih mahal di lapangan.
+    if (aktif && !bisaAutoUpdate(pc.versiAgent)) {
+      throw new BadRequestException(
+        `PC ini masih versi ${pc.versiAgent ?? 'tidak diketahui'} dan belum bisa memperbarui dirinya. ` +
+          'Pasang versi 1.0.26.0 atau lebih baru dulu secara manual, baru tandai untuk pembaruan.',
+      );
+    }
+
+    await this.prisma.pc.update({
+      where: { id },
+      data: {
+        autoUpdate: aktif,
+        // Sisa kegagalan percobaan sebelumnya harus dibuang, apa pun nilai
+        // flag barunya: kalau operator menyalakan ulang setelah gagal, pesan
+        // lama akan terbaca sebagai milik percobaan yang baru — dan operator
+        // akan mengira update yang sedang berjalan sudah pernah gagal.
+        autoUpdatePesan: null,
+        autoUpdatePercen: aktif ? 0 : null,
+        autoUpdateWaktu: aktif ? new Date() : null,
+      },
+    });
+
+    // ⚠️ Nilai balik WAJIB dipakai. `false` berarti agent offline, dan flag-nya
+    // tetap disimpan supaya agent yang nanti konek melanjutkannya sendiri.
+    const terkirim = await this.sessionService.kirimAutoUpdateConfig(id, aktif);
+
+    // Layar PC dikunci supaya pelanggan tidak melihat form login yang pasti
+    // ditolak. Sesi yang sedang berjalan TIDAK disentuh.
+    if (aktif) {
+      await this.sessionService.kunciLayarPc(id);
+    }
+
+    await this.sessionService.broadcastPcUpdate();
+
+    return { id, namaPc: pc.namaPc, autoUpdate: aktif, terkirim, versiAgent: pc.versiAgent };
+  }
+}
+
+/**
+ * Apakah versi agent ini sudah punya kode pembaruan otomatis?
+ *
+ * ⚠️ Bandingkan **per bagian numerik**, bukan leksikografis:
+ * `string.Compare` menganggap "1.0.10.0" lebih kecil dari "1.0.9.0"
+ * (karena "1" datang sebelum "9"), dan itu membuat upgrade diam-diam
+ * terlewat.
+ */
+export function bisaAutoUpdate(versiAgent: string | null | undefined): boolean {
+  const min = [1, 0, 26, 0];
+  const bagian = (versiAgent ?? '').trim().split('.');
+  if (bagian.length < 2 || bagian.length > 4) return false;
+
+  const angka: number[] = [];
+  for (const b of bagian) {
+    if (!/^\d{1,3}$/.test(b)) return false;
+    angka.push(Number(b));
+  }
+  while (angka.length < 4) angka.push(0);
+
+  for (let i = 0; i < 4; i++) {
+    if (angka[i] !== min[i]) return angka[i] > min[i];
+  }
+  return true;
 }

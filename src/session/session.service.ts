@@ -118,6 +118,30 @@ export interface SessionGatewayEvents {
    * akan pernah diulang dan PC itu akan menggantung menyala selamanya.
    */
   matikanPcOtomatis(pcId: string): Promise<boolean>;
+  /**
+   * Kirim `agent:auto_update_config` ke SATU agent.
+   *
+   * ⚠️ Per-PC, bukan broadcast. Konsep awal memakai sakelar global untuk
+   * seluruh agent, dan itu dibatalkan: menyalakannya akan menggerakkan
+   * semua agent yang tersambung — termasuk PC yang sedang dipakai pelanggan.
+   * Flag per-PC membuat mustahil menyentuh PC yang tidak dipilih.
+   *
+   * Return `true` kalau benar-benar terkirim. `false` berarti agent offline;
+   * pemanggil TIDAK boleh menganggap flag-nya "sudah dikirim", karena PC itu
+   * tidak akan pernah diberi tahu dan update tidak akan jalan sampai agent
+   * konek lagi — dan saat itu flag-nya masih tersimpan, jadi agent
+   * melanjutkannya sendiri.
+   */
+  kirimAutoUpdateConfig(pcId: string, aktif: boolean): Promise<boolean>;
+  /**
+   * Catat progres update yang dilaporkan agent, untuk timeline progres di
+   * Halaman PC. `persen` 0..100, `pesan` boleh null.
+   */
+  catatProgresAutoUpdate(
+    pcId: string,
+    persen: number | null,
+    pesan: string | null,
+  ): Promise<void>;
 }
 
 /**
@@ -205,6 +229,45 @@ export class SessionService implements OnModuleDestroy {
     } catch (e) {
       const pesan = e instanceof Error ? e.message : String(e);
       this.gatewayEvents?.logTickError(`kunci layar PC gagal: ${pesan}`);
+    }
+  }
+
+  /**
+   * Kirim status pembaruan otomatis ke SATU agent.
+   *
+   * ⚠️ Per-PC, bukan broadcast — lihat catatan panjang di
+   * `SessionGateway.kirimAutoUpdateConfig()`.
+   *
+   * @returns true kalau terkirim. false berarti agent offline; pemanggil
+   *   harus membiarkan flag tetap tersimpan supaya agent yang nanti konek
+   *   melanjutkannya sendiri. Tidak pernah melempar.
+   */
+  async kirimAutoUpdateConfig(pcId: string, aktif: boolean): Promise<boolean> {
+    try {
+      return (await this.gatewayEvents?.kirimAutoUpdateConfig(pcId, aktif)) ?? false;
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      this.gatewayEvents?.logTickError(`kirim auto-update config gagal: ${pesan}`);
+      return false;
+    }
+  }
+
+  /**
+   * Catat progres update yang dilaporkan agent.
+   *
+   * ⚠️ Tidak pernah melempar: progres hanya untuk tampilan, dan gagal
+   * menulisnya tidak boleh menggagalkan update yang sedang jalan.
+   */
+  async catatProgresAutoUpdate(
+    pcId: string,
+    persen: number | null,
+    pesan: string | null,
+  ): Promise<void> {
+    try {
+      await this.gatewayEvents?.catatProgresAutoUpdate(pcId, persen, pesan);
+    } catch (e) {
+      const pesanErr = e instanceof Error ? e.message : String(e);
+      this.gatewayEvents?.logTickError(`catat progres auto-update gagal: ${pesanErr}`);
     }
   }
 
@@ -420,6 +483,32 @@ export class SessionService implements OnModuleDestroy {
         if (pc && pc.rustdeskId !== bersih) {
           data.rustdeskId = bersih;
         }
+      }
+    }
+
+    // 🔴 Toggle pembaruan otomatis LEPAS OTOMATIS begitu versi agent naik.
+    //
+    // ⚠️ Tanpa ini, PC yang sudah diperbarui akan tetap ditahan selamanya:
+    // operator harus ingat mematikan sakelarnya di Halaman PC, dan selama
+    // masih menyala PC itu menolak sesi pelanggan. Padahal update-nya sendiri
+    // sudah SELESAI.
+    //
+    // ⚠️ Yang dibandingkan adalah versi SEBELUM update (`versiLama`) dengan
+    // yang baru dilaporkan, jadi reconn biasa tidak ikut melepas toggle —
+    // hanya naik versi yang melepas. Kalau dibandingkan dengan versi server,
+    // reconn yang sama akan relancer update berulang.
+    if (versiAgent && versiAgent.trim()) {
+      const pc = await this.prisma.pc.findUnique({
+        where: { id: pcId },
+        select: { autoUpdate: true, versiAgent: true },
+      });
+      if (pc?.autoUpdate && pc.versiAgent !== versiAgent.trim().slice(0, 32)) {
+        data.autoUpdate = false;
+        data.autoUpdatePercen = null;
+        data.autoUpdatePesan = `Selesai: versi ${versiAgent.trim().slice(0, 32)}`;
+        this.logger.log(
+          `PC ${pcId} naik versi ke ${versiAgent.trim()} — flag pembaruan otomatis dilepas otomatis`,
+        );
       }
     }
 
@@ -819,13 +908,29 @@ export class SessionService implements OnModuleDestroy {
     // `Session`. Kalau ditelepurkan, voucher pelanggan ikut terpakai.
     const pc = await this.prisma.pc.findUnique({
       where: { id: pcId },
-      select: { rusak: true },
+      select: { rusak: true, autoUpdate: true, namaPc: true },
     });
     if (!pc) {
       return { success: false, message: 'PC tidak ditemukan' };
     }
     if (pc.rusak) {
       return { success: false, message: 'PC sedang tidak dipakai (ditandai rusak)' };
+    }
+    // ⚠️ PC yang sedang disiapkan untuk pembaruan otomatis menolak sesi BARU.
+    //
+    // Sesi yang SEDANG berjalan dibiarkan — itu keputusan operator: menolak
+    // toggle karena ada sesi akan terasa seperti sistem tidak mau melayani
+    // pelanggan. Update berjalan begitu pelanggan menekan STOP.
+    //
+    // ⚠️ Pesannya menyebutkan nama PC dan alasannya. "Login ditolak" tanpa
+    // penjelasan membuat kasir mengira PC-nya rusak, lalu melapor ke teknisi
+    // untuk hal yang sebenarnya normal.
+    if (pc.autoUpdate) {
+      return {
+        success: false,
+        message:
+          `${pc.namaPc} sedang diperbarui otomatis. Login ditolak sampai pembaruan selesai.`,
+      };
     }
 
     const existingSession = await this.prisma.session.findFirst({
@@ -1351,6 +1456,11 @@ async autoShutdownMenit(): Promise<number> {
       const kandidat = await this.prisma.pc.findMany({
         where: {
           rusak: false,
+          // ⚠️ PC yang sedang disiapkan untuk pembaruan otomatis HARUS
+          // dilewati. Auto-shutdown akan mematikan PC yang sedang menunggu
+          // sesi selesai lalu mengunduh 89 MB — dan update tidak akan pernah
+          // terjadi karena PC-nya mati.
+          autoUpdate: false,
           terakhirAktifAt: { not: null, lte: batas },
         },
         select: { id: true, namaPc: true, terakhirAktifAt: true },
@@ -1442,6 +1552,12 @@ async autoShutdownMenit(): Promise<number> {
       const hasil = await this.prisma.pc.updateMany({
         where: {
           rusak: false,
+          // Sama seperti `checkAutoShutdown()`: PC berflag auto-update tidak
+          // diberi timer. Kalau diberi, operator melihat hitung mundur
+          // "SHUTDOWN DALAM 0:00" padahal PC itu sedang diperbarui dan tidak
+          // akan pernah dimatikan — persis kelas umpan balik palsu yang sudah
+          // pernah jadi bug di halaman dashboard.
+          autoUpdate: false,
           terakhirAktifAt: null,
           lastHeartbeatAt: { gte: new Date(Date.now() - AMBANG_OFFLINE_MS) },
           sessions: { none: { status: SessionStatus.BERJALAN } },

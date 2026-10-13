@@ -1577,7 +1577,7 @@ async autoShutdownMenit(): Promise<number> {
   private async checkGracePeriodExpired(): Promise<void> {
     // Function ini dipanggil dari setInterval. Tanpa try/catch, satu error
     // apa pun di dalamnya jadi unhandled rejection yang menjatuhkan SELURUH
-    // proses server, bukan cuma pengiriman جزء dari sesi ini.
+    // proses server, bukan cuma pengiriman sebagian dari sesi ini.
     try {
       const gracePeriod = await this.getGracePeriod();
       if (!Number.isFinite(gracePeriod)) {

@@ -735,7 +735,13 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   @SubscribeMessage('agent:auto_update_progress')
   async handleAutoUpdateProgress(
     @ConnectedSocket() client: Socket,
-    @MessageBody() data: { pcId: string; agentToken: string; persen?: number; pesan?: string },
+    @MessageBody() data: {
+      pcId: string;
+      agentToken: string;
+      persen?: number;
+      pesan?: string;
+      tahap?: string;
+    },
   ): Promise<{ success: boolean; message?: string }> {
     const pcId = String(data?.pcId ?? '');
     const agentToken = String(data?.agentToken ?? '');
@@ -747,7 +753,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       // ⚠️ `autoUpdate` ikut diambil, bukan cuma `id`. Tanpa itu agent PC
       // yang tidak ditandai pun bisa menulis pesan dan persentase ke PC-nya
       // sendiri, dan baris database jadi tidak mencerminkan kenyataan.
-      select: { id: true, autoUpdate: true },
+      select: { id: true, autoUpdate: true, namaPc: true },
     });
     if (!valid) {
       return { success: false, message: 'agentToken PC tidak valid' };
@@ -764,7 +770,31 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     const persen = Number.isFinite(mentah) ? Math.max(0, Math.min(100, Math.round(mentah))) : null;
     const pesan = typeof data?.pesan === 'string' ? data.pesan.slice(0, 200) : null;
 
+    const tahap = typeof data?.tahap === 'string' ? data.tahap.slice(0, 20) : '';
+
     await this.catatProgresAutoUpdate(pcId, persen, pesan);
+
+    // 🔴 Tahap "batal" MELEPASKAN flag di sisi server.
+    //
+    // Tanpa baris ini, agent sudah menyerah sementara flag di database masih
+    // true. PC itu menolak sesi, dilewati auto-shutdown, dan tidak akan pernah
+    // update lagi — terkunci sampai operator membuka Halaman PC. Jadi
+    // "menyerah" harus berarti "berhenti", bukan hanya agent yang berhenti.
+    //
+    // ⚠️ Yang memicu baris ini HANYA batal, yaitu keputusan teknisi.
+    // Tahap gagal sengaja TIDAK melepas flag: operator tetap memegang
+    // kendali, dan PC yang tidak bisa dilogin lebih baik daripada update
+    // berulang yang membanjiri server tanpa pernah berhasil.
+    if (tahap === 'batal') {
+      await this.prisma.pc.update({
+        where: { id: pcId },
+        data: { autoUpdate: false, autoUpdatePesan: 'Dibatalkan teknisi', autoUpdatePercen: null },
+      });
+      this.broadcastActivityLog('pc_auto_update_batal', {
+        pc: valid.namaPc ?? null,
+        detail: { pc: pcId, oleh: 'teknisi' },
+      });
+    }
     return { success: true };
   }
 

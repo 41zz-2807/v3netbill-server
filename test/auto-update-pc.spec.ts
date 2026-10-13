@@ -337,3 +337,83 @@ describe('agent:auto_update_progress — guard flag', () => {
     expect(catat.mock.calls[0][2]).toHaveLength(200);
   });
 });
+
+/**
+ * 🔴 Tahap "batal" MELEPASKAN flag auto-update di server.
+ *
+ * Tanpa ini, agent sudah menyerah sementara flag di database masih true.
+ * Akibatnya PC menolak sesi, dilewati auto-shutdown, dan tidak akan pernah
+ * update lagi — terkunci sampai operator membuka Halaman PC. Jadi ini bukan
+ * JpaHK tampilan: "menyerah" harus berarti "berhenti".
+ *
+ * Dan yang TIDAK melepas flag adalah tahap "gagal" — itu keputusan operator,
+ * bukan keputusan agent.
+ */
+describe('agent:auto_update_progress — tahap batal melepas flag', () => {
+  function gatewayDengan(valid: { id: string; autoUpdate: boolean; namaPc: string } | null) {
+    const catat = vi.fn(async () => {});
+    const update = vi.fn(async () => ({}));
+    const g = {
+      prisma: { pc: { findFirst: vi.fn(async () => valid), update } },
+      catatProgresAutoUpdate: catat,
+      broadcastActivityLog: vi.fn(),
+      logger: { warn: vi.fn() },
+    };
+    return { g, catat, update };
+  }
+
+  async function kirim(
+    g: ReturnType<typeof gatewayDengan>['g'],
+    data: Record<string, unknown>,
+  ) {
+    const { SessionGateway } = await import('../src/session/session.gateway.js');
+    const proto = SessionGateway.prototype as unknown as Record<string, (...a: never[]) => unknown>;
+    const handler = proto.handleAutoUpdateProgress;
+    if (typeof handler !== 'function') throw new Error('handleAutoUpdateProgress tidak ditemukan');
+    return handler.call(g, {} as never, data as never);
+  }
+
+  const VALID = { id: 'a', autoUpdate: true, namaPc: 'testeer' };
+
+  it('tahap "batal" -> flag dilepas (autoUpdate: false)', async () => {
+    const { g, update } = gatewayDengan(VALID);
+    await kirim(g, { pcId: 'a', agentToken: 't', tahap: 'batal' });
+    expect(update).toHaveBeenCalledWith({
+      where: { id: 'a' },
+      data: expect.objectContaining({ autoUpdate: false }),
+    });
+  });
+
+  it('tahap "gagal" -> flag TIDAK dilepas', async () => {
+    const { g, update } = gatewayDengan(VALID);
+    await kirim(g, { pcId: 'a', agentToken: 't', tahap: 'gagal', persen: 100 });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('tahap "unduh" -> flag TIDAK dilepas', async () => {
+    const { g, update } = gatewayDengan(VALID);
+    await kirim(g, { pcId: 'a', agentToken: 't', tahap: 'unduh', persen: 30 });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('tanpa tahap -> flag TIDAK dilepas', async () => {
+    const { g, update } = gatewayDengan(VALID);
+    await kirim(g, { pcId: 'a', agentToken: 't', persen: 50 });
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('PC tidak berflag + tahap "batal" -> tidak ada update sama sekali', async () => {
+    const { g, update, catat } = gatewayDengan({ id: 'a', autoUpdate: false, namaPc: 'PC001' });
+    const r = await kirim(g, { pcId: 'a', agentToken: 't', tahap: 'batal' });
+    expect(r.success).toBe(false);
+    expect(update).not.toHaveBeenCalled();
+    expect(catat).not.toHaveBeenCalled();
+  });
+
+  it('tahap dipotong 20 karakter supaya tidak jadi teks panjang', async () => {
+    const { g, update } = gatewayDengan(VALID);
+    await kirim(g, { pcId: 'a', agentToken: 't', tahap: 'x'.repeat(80) });
+    // Bukan "batal", jadi tidak boleh melepas flag.
+    expect(update).not.toHaveBeenCalled();
+  });
+});

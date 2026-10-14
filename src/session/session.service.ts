@@ -434,6 +434,24 @@ export class SessionService implements OnModuleDestroy {
         }
       }
     }
+    // 🔴 Penanda "sudah putus" harus DIHAPUS di sini, bukan menunggu
+    // heartbeat berikutnya. `registerPc()` berjalan tepat saat agent konek
+    // ulang, sedangkan heartbeat baru 15 detik kemudian — dan masa tenggang
+    // bisa saja sudah terlewati dalam rentang itu, sehingga sesi pelanggan
+    // pendukungnya ikut dilepas padahal agentnya sudah kembali.
+    //
+    // `heartbeat()` juga membersihkannya, tapi itu cuma jaring pengaman:
+    // heartbeat tidak jalan kalau socket belum terdaftar.
+    if (runningSession?.disconnectedAt) {
+      await this.prisma.session.update({
+        where: { id: runningSession.id },
+        data: { disconnectedAt: null },
+      });
+      this.logger.log(
+        `Sesi ${runningSession.id} kembali tersambung — dibatalkan sebelum masa tenggang habis`,
+      );
+    }
+
     await this.prisma.pc.update({ where: { id: pcId }, data });
     this.gatewayEvents?.broadcastPcUpdate();
   }
@@ -1294,6 +1312,21 @@ export class SessionService implements OnModuleDestroy {
     return { success: true };
   }
 
+  /**
+   * Socket agent sebuah PC terputus.
+   *
+   * ⚠️ Ini TIDAK langsung menghentikan sesi. Yang dilakukan hanya menandai
+   * `disconnectedAt`, dan sesi baru benar-benar dihentikan oleh
+   * `checkGracePeriodExpired()` kalau agent tidak kembali dalam masa tenggang
+   * (`grace_period_detik`, bawaan 180 detik).
+   *
+   * Kenapa wajib begitu: sebelumnya sesi langsung dihentikan di sini, sehingga
+   * `grace_period_detik` tidak pernah berefek apa pun — `disconnectedAt` tidak
+   * pernah diisi, jadi pemeriksa masa tenggang tidak pernah punya baris untuk
+   * diperiksa. Akibatnya kedipan jaringan sedetik apa pun langsung mengeluarkan
+   * pelanggan dari PC-nya. Uangnya memang dikembalikan, tapi pelanggan harus
+   * login ulang dari awal, dan itu terasa seperti dikick.
+   */
   async handleDisconnect(pcId: string): Promise<void> {
     const session = await this.prisma.session.findFirst({
       where: {
@@ -1303,10 +1336,37 @@ export class SessionService implements OnModuleDestroy {
     });
 
     if (session) {
-      await this.stopSession(session.id, 'disconnect_timeout');
+      await this.tandaiSesiPutus(session);
     }
 
     this.gatewayEvents?.broadcastPcUpdate();
+  }
+
+  /**
+   * Tandai sesi terputus supaya masa tenggang mulai dihitung.
+   *
+   * ⚠️ Timestamp TIDAK ditulis ulang kalau sudah ada. Kalau ditulis ulang,
+   * setiap disconnect berikutnya akan memperpanjang masa tenggang — dan sesi
+   * bisa bertahan selamanya tepat pada saat seharusnya berakhir.
+   */
+  private async tandaiSesiPutus(session: {
+    id: string;
+    disconnectedAt: Date | null;
+  }): Promise<void> {
+    if (session.disconnectedAt) {
+      return;
+    }
+
+    const gracePeriod = await this.getGracePeriod();
+    await this.prisma.session.update({
+      where: { id: session.id },
+      data: { disconnectedAt: new Date() },
+    });
+
+    this.logger.log(
+      `Sesi ${session.id} terputus — menunggu agent kembali, ` +
+        `masa tenggang ${gracePeriod} detik. Sesi BELUM dihentikan.`,
+    );
   }
 
   /** Owner/admin menghentikan sesi aktif di sebuah PC agar layar terbuka (manual). */

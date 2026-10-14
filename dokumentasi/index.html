@@ -1,0 +1,2783 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dokumentasi v3Netbill — Sistem Billing Warnet</title>
+<style>
+:root{
+  --bg:#0f172a; --bg2:#1e293b; --card:#ffffff; --ink:#0f172a; --ink2:#475569;
+  --muted:#64748b; --line:#e2e8f0; --brand:#00D4AA; --brand2:#0d9488;
+  --warn:#b45309; --warnbg:#fffbeb; --warnline:#fcd34d;
+  --bad:#dc2626; --badbg:#fef2f2; --good:#16a34a; --goodbg:#f0fdf4;
+  --accent:#1e293b; --accent2:#0f172a;
+  --code-bg:#0b1220; --code-ink:#e2e8f0;
+  --radius:14px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  font-size:16px; line-height:1.7;
+}
+code,pre,.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace}
+
+/* ---------- LAYOUT ---------- */
+.layout{display:flex;align-items:flex-start;min-height:100vh}
+.sidebar{
+  width:288px;flex:0 0 288px;background:var(--bg2);color:#cbd5e1;
+  position:sticky;top:0;height:100vh;overflow-y:auto;padding:18px 0 40px;
+  border-right:1px solid #0f172a;
+}
+.brand{padding:6px 20px 16px;border-bottom:1px solid #334155;margin-bottom:12px}
+.brand h1{font-size:17px;margin:0;color:#fff;letter-spacing:.2px}
+.brand p{margin:4px 0 0;font-size:12px;color:#94a3b8}
+.searchbox{padding:0 16px 14px}
+.searchbox input{
+  width:100%;padding:9px 11px;border-radius:9px;border:1px solid #475569;
+  background:#0f172a;color:#e2e8f0;font-size:13px;
+}
+.searchbox input:focus{outline:2px solid var(--brand);outline-offset:1px}
+.navgroup{margin:0 0 6px}
+.navgroup > .lbl{
+  padding:10px 20px 4px;font-size:11px;letter-spacing:.9px;text-transform:uppercase;
+  color:#64748b;font-weight:700;
+}
+.sidebar a{
+  display:block;padding:7px 20px 7px 20px;color:#cbd5e1;text-decoration:none;
+  font-size:13.5px;border-left:3px solid transparent;
+}
+.sidebar a:hover{background:#0f172a;color:#fff;border-left-color:var(--brand)}
+.sidebar a.active{background:#0f172a;color:#fff;border-left-color:var(--brand);font-weight:600}
+.sidebar a.sub{padding-left:36px;font-size:13px;color:#94a3b8}
+.sidebar a.sub:hover,.sidebar a.sub.active{color:#fff}
+.sidebar .hit-none{display:none}
+
+.main{flex:1 1 auto;min-width:0;background:var(--card)}
+.topbar{
+  position:sticky;top:0;z-index:20;background:rgba(255,255,255,.94);
+  backdrop-filter:blur(8px);border-bottom:1px solid var(--line);
+  padding:10px 26px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;
+}
+.topbar .tt{font-size:13px;color:var(--muted)}
+.topbar .sp{flex:1}
+.btn{
+  border:1px solid var(--line);background:#fff;color:var(--ink);border-radius:8px;
+  padding:6px 12px;font-size:13px;cursor:pointer;
+}
+.btn:hover{background:#f1f5f9}
+.content{max-width:1080px;margin:0 auto;padding:26px 26px 100px}
+
+/* ---------- TYPO ---------- */
+h2{
+  font-size:25px;margin:44px 0 6px;padding-top:22px;border-top:3px solid var(--brand);
+  scroll-margin-top:70px;
+}
+h2:first-of-type{border-top:none;margin-top:10px}
+h3{font-size:18.5px;margin:28px 0 8px;color:var(--accent);scroll-margin-top:70px}
+h4{font-size:15.5px;margin:20px 0 6px;color:var(--accent2)}
+p{margin:9px 0}
+a{color:var(--brand2)}
+ul,ol{margin:9px 0;padding-left:23px}
+li{margin:4px 0}
+.lead{font-size:17px;color:var(--ink2)}
+.muted{color:var(--muted)}
+.small{font-size:13.5px}
+
+/* ---------- CODE ---------- */
+pre{
+  background:var(--code-bg);color:var(--code-ink);padding:14px 16px;border-radius:10px;
+  overflow-x:auto;font-size:13px;line-height:1.55;margin:12px 0;
+  border:1px solid #1e293b;
+}
+pre code{background:none;padding:0;font-size:13px}
+code.inl{
+  background:#f1f5f9;color:var(--accent2);padding:1.5px 5px;border-radius:5px;
+  font-size:13px;border:1px solid var(--line);
+}
+.codehead{
+  display:flex;align-items:center;justify-content:space-between;
+  background:var(--bg2);color:#cbd5e1;font-size:12px;padding:6px 12px;
+  border-radius:10px 10px 0 0;border:1px solid #1e293b;border-bottom:none;
+}
+.codehead + pre{border-radius:0 0 10px 10px;margin-top:0}
+.copybtn{
+  background:#334155;color:#e2e8f0;border:none;border-radius:6px;
+  padding:3px 9px;font-size:11px;cursor:pointer;
+}
+.copybtn:hover{background:var(--brand2)}
+
+/* ---------- TABLE ---------- */
+.tblwrap{overflow-x:auto;margin:14px 0;border:1px solid var(--line);border-radius:10px}
+table{border-collapse:collapse;width:100%;font-size:13.5px;background:#fff}
+th,td{padding:8px 11px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top}
+th{background:#f8fafc;font-weight:700;color:var(--accent);white-space:nowrap;font-size:12.5px}
+tbody tr:last-child td{border-bottom:none}
+tbody tr:hover{background:#fafafa}
+td code{white-space:nowrap}
+
+/* ---------- BOX ---------- */
+.box{border-radius:10px;padding:12px 15px;margin:14px 0;font-size:14.5px;border-left:4px solid}
+.box .bt{font-weight:700;display:block;margin-bottom:4px}
+.box.warn{background:var(--warnbg);border-color:#f59e0b}
+.box.warn .bt{color:var(--warn)}
+.box.bad{background:var(--badbg);border-color:var(--bad)}
+.box.bad .bt{color:var(--bad)}
+.box.good{background:var(--goodbg);border-color:var(--good)}
+.box.good .bt{color:var(--good)}
+.box.info{background:#eff6ff;border-color:#3b82f6}
+.box.info .bt{color:#1d4ed8}
+
+/* ---------- TAG ---------- */
+.tag{
+  display:inline-block;padding:1px 8px;border-radius:20px;font-size:11.5px;
+  font-weight:700;letter-spacing:.3px;white-space:nowrap;
+}
+.t-pub{background:#fef3c7;color:#92400e}
+.t-adm{background:#fee2e2;color:#991b1b}
+.t-any{background:#e0e7ff;color:#3730a3}
+.t-ws{background:#cffafe;color:#0e7490}
+.t-db{background:#ede9fe;color:#5b21b6}
+.t-ok{background:#dcfce7;color:#166534}
+.t-no{background:#fee2e2;color:#991b1b}
+.t-off{background:#f1f5f9;color:#475569}
+
+/* ---------- CARDS ---------- */
+.grid{display:grid;gap:14px;margin:16px 0}
+.g2{grid-template-columns:repeat(auto-fit,minmax(270px,1fr))}
+.g3{grid-template-columns:repeat(auto-fit,minmax(215px,1fr))}
+.card{
+  border:1px solid var(--line);border-radius:var(--radius);padding:15px 17px;background:#fff;
+}
+.card h4{margin:0 0 4px;color:var(--accent2)}
+.card .ck{font-size:12px;color:var(--muted);margin-bottom:8px}
+.card ul{margin:6px 0 0;padding-left:19px;font-size:13.5px}
+.stat{background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.stat .n{font-size:22px;font-weight:800;color:var(--brand2);line-height:1.2}
+.stat .l{font-size:12px;color:var(--muted)}
+
+/* ---------- MISC ---------- */
+hr{border:none;border-top:1px solid var(--line);margin:30px 0}
+.kv{display:grid;grid-template-columns:minmax(150px,auto) 1fr;gap:4px 14px;font-size:14px}
+.kv dt{font-weight:700;color:var(--accent)}
+.kv dd{margin:0;color:var(--ink2)}
+.toc{background:#f8fafc;border:1px solid var(--line);border-radius:12px;padding:14px 18px;margin:16px 0}
+.toc ol{margin:6px 0;padding-left:20px;columns:2;column-gap:26px}
+.toc li{margin:3px 0;font-size:14px;break-inside:avoid}
+.badge-ver{font-family:ui-monospace,monospace}
+details{border:1px solid var(--line);border-radius:10px;padding:0;margin:12px 0;background:#fff}
+details>summary{
+  padding:11px 15px;cursor:pointer;font-weight:700;background:#f8fafc;border-radius:10px;
+  list-style:none;font-size:14.5px;
+}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"\25B6 ";color:var(--brand2);font-size:11px}
+details[open]>summary{border-radius:10px 10px 0 0;border-bottom:1px solid var(--line)}
+details>div{padding:14px 17px}
+.no-res{display:none;padding:14px 20px;color:#fca5a5;font-size:13px}
+
+@media(max-width:900px){
+  .layout{display:block}
+  .sidebar{width:100%;flex:none;height:auto;position:static;border-right:none}
+  .navgroup{columns:2}
+  .toc ol{columns:1}
+}
+@media print{
+  .sidebar,.topbar,.copybtn{display:none!important}
+  body{background:#fff}
+  h2{page-break-after:avoid}
+}
+</style>
+</head>
+<body>
+<div class="layout">
+
+<!-- ================= SIDEBAR ================= -->
+<aside class="sidebar">
+  <div class="brand">
+    <h1>Dokumentasi v3Netbill</h1>
+    <p>Sistem Billing Warnet &mdash; 4 aplikasi</p>
+  </div>
+  <div class="searchbox">
+    <input type="search" id="cari" placeholder="Cari di dokumentasi..." autocomplete="off">
+  </div>
+  <nav id="nav">
+    <div class="navgroup"><div class="lbl">Umum</div>
+      <a href="#ringkasan" class="lv1">Ringkasan &amp; Arsitektur</a>
+      <a href="#alur" class="lv1">Cara Kerja End-to-End</a>
+      <a href="#perintah" class="lv1">Perintah yang Sering Dipakai</a>
+    </div>
+    <div class="navgroup"><div class="lbl">Aplikasi</div>
+      <a href="#frontend" class="lv1">1. Frontend (Web)</a>
+      <a href="#backend" class="lv1">2. Backend (API)</a>
+      <a href="#mobile" class="lv1">3. Mobile (Android)</a>
+      <a href="#agent" class="lv1">4. Agent (Windows)</a>
+    </div>
+    <div class="navgroup"><div class="lbl">Data</div>
+      <a href="#database" class="lv1">Struktur Database</a>
+      <a href="#db-view" class="lv1 sub">Tabel &amp; Relasi</a>
+      <a href="#db-kolom" class="lv1 sub">Definisi Kolom</a>
+      <a href="#db-setting" class="lv1 sub">Tabel Setting</a>
+      <a href="#db-query" class="lv1 sub">Query &amp; Perawatan</a>
+    </div>
+    <div class="navgroup"><div class="lbl">Referensi</div>
+      <a href="#api-rest" class="lv1">API REST</a>
+      <a href="#api-ws" class="lv1">WebSocket</a>
+      <a href="#troubleshoot" class="lv1">Troubleshooting</a>
+      <a href="#keamanan" class="lv1">Catatan Keamanan</a>
+    </div>
+  </nav>
+</aside>
+
+<!-- ================= KONTEN ================= -->
+<main class="main">
+<div class="topbar">
+  <span class="tt">Dokumentasi v3Netbill &mdash; versi 1.0</span>
+  <span class="sp"></span>
+  <button class="btn" id="btn-print">Cetak / Simpan PDF</button>
+  <button class="btn" id="btn-expand">Buka semua bagian</button>
+</div>
+
+<div class="content" id="content">
+
+<h2 id="ringkasan">Ringkasan &amp; Arsitektur</h2>
+<p class="lead">
+v3Netbill adalah sistem penagihan untuk warnet (komputer bersama). Pelanggan membayar
+sesuai waktu pemakaian; kasir mengatur semuanya lewat web atau HP; tiap komputer
+kasir menjalankan <em>agent</em> Windows yang mengunci layar sampai pelanggan membayar
+dan masuk.
+</p>
+
+<h3>Satu kalimat cara kerjanya</h3>
+<p>
+Pelanggan membayar &rarr; kasir membuat <b>voucher</b> atau <b>member</b> &rarr; pelanggan
+mengetik kodenya di layar kunci PC &rarr; agent mengunci Task Manager dan mulai
+menghitung mundur &rarr; server memotong saldo tiap detik &rarr; saat waktu habis atau
+kasir menekan Kunci, layar kembali terkunci dan sisa dikembalikan.
+</p>
+
+<h3>Empat aplikasi yang membentuk sistem</h3>
+<div class="grid g2">
+  <div class="card">
+    <h4>1. Frontend &mdash; Web</h4>
+    <div class="ck">TypeScript &middot; React 19 &middot; Vite 8 &middot; Tailwind CSS 4</div>
+    <p class="small">Halaman yang dibuka kasir &amp; admin lewat peramban. Dashboard, PC Management, Voucher &amp; Member, Transaksi, Laporan, Pengaturan.</p>
+    <p class="small muted">Port dev 5173 &middot; hasil build disajikan backend di port 3000.</p>
+  </div>
+  <div class="card">
+    <h4>2. Backend &mdash; API</h4>
+    <div class="ck">TypeScript &middot; NestJS 12 (ESM) &middot; Prisma 5.22 &middot; PostgreSQL 15</div>
+    <p class="small">Otak sistem. Menyediakan REST API, WebSocket real-time, cron, PDF, email, Telegram, dan push FCM. Server adalah satu-satunya sumber kebenaran waktu &amp; tagihan.</p>
+    <p class="small muted">Port 3000 &middot; WebSocket namespace <code class="inl">/session</code>.</p>
+  </div>
+  <div class="card">
+    <h4>3. Mobile &mdash; Android</h4>
+    <div class="ck">Dart 3 &middot; Flutter 3.44.4</div>
+    <p class="small">Aplikasi HP untuk kasir. Fungsi yang sama dengan web, dibuat untuk dipakai sambil berjalan di warnet. Bottom navigation: Home, Voucher, Profile.</p>
+    <p class="small muted">Format APK &middot; bisa memperbarui dirinya sendiri tanpa peramban.</p>
+  </div>
+  <div class="card">
+    <h4>4. Agent &mdash; Windows</h4>
+    <div class="ck">C# &middot; .NET 8 &middot; WPF &middot; WiX 4.0.5 (MSI)</div>
+    <p class="small">Berjalan di setiap PC kasir. Dua bagian: <b>Service</b> (tanpa jendela, penghubung server) dan <b>Overlay</b> (jendela layar kunci fullscreen yang dilihat pelanggan).</p>
+    <p class="small muted">Install &middot; bisa memperbarui dirinya sendiri per-PC.</p>
+  </div>
+</div>
+
+<div class="box info">
+  <span class="bt">Semua kode memakai huruf Indonesia dalam UI</span>
+  Istilah teknis (nama tabel, endpoint, perintah) tetap dalam bahasa Inggris supaya cocok
+  dengan kode dan dokumentasi asli. Nama PC, kode voucher, dan nama member bebas &
+  tidak boleh diubah sembarangan &mdash; sebagian dari keduanya adalah <b>kredensial login</b>.
+</div>
+
+<h3>Diagram alur data</h3>
+<div class="codehead">Arsitektur umum<span></span></div>
+<pre><code>                    +----------------------------+
+                    |   Pelanggan di depan PC    |
+                    +-------------+--------------+
+                                  | mengetik kode di layar kunci
+                                  v
+  [Agent.Overlay]  ==named pipe==>  [Agent.Service]  ==Socket.IO==>  [Backend NestJS]
+   WPF layar kunci       v3netbill      .NET Windows svc        /session        |
+   hitung mundur                                            |                  |
+   tombol STOP / power                                      | Prisma           | sekaligus
+                                  <==========================+                  | menyajikan
+                                     session:tick (1 detik)                     | file frontend
+                                                                               v
+                                                          [PostgreSQL 15]  &lt;domain publik&gt;
+                                                          +-------------+
+
+  [Frontend Web]  <---REST /api--->  [Backend]
+  [Mobile APK]   <---REST /api--->     ^
+  [Frontend Web]  <---Socket.IO /session---+
+  [Mobile APK]   <---Socket.IO /session---+   room "dashboard"</code></pre>
+
+<h3>Kenapa backend menyajikan halaman web-nya sendiri</h3>
+<p>
+Domain publik diarahkan ke port <code class="inl">3000</code> (backend), <b>bukan</b> ke
+port 5173. Backend memakai <code class="inl">ServeStaticModule</code> untuk menyajikan
+hasil build frontend. Konsekuensinya ada satu proses saja yang perlu dijaga, dan
+tidak ada proxy di depan &mdash; Cloudflare Tunnel sudah cukup untuk meneruskan ke
+satu port itu.
+</p>
+
+<div class="box warn">
+  <span class="bt">Dua aturan yang sering dilanggar</span>
+  <ol style="margin:4px 0 0">
+    <li><b>Jangan menaruh berkas sensitif di <code class="inl">frontend/dist</code>.</b>
+    Folder itu disajikan tanpa autentikasi. Hanya <code class="inl">/api</code>,
+    <code class="inl">/session</code>, dan <code class="inl">/socket.io</code> yang dikecualikan.</li>
+    <li><b>Cara deploy frontend yang benar</b> adalah
+    <code class="inl">docker compose exec v3netbill-frontend npm run build</code> &mdash;
+    <b>bukan</b> <code class="inl">docker compose up -d --build v3netbill-backend</code>,
+    karena folder <code class="inl">dist</code> di-bind mount dan hasil build di dalam image tidak pernah dibaca.</li>
+  </ol>
+</div>
+
+<h3>Peran pengguna</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Peran</th><th>Bisa apa</th><th>Tidak bisa</th></tr></thead>
+<tbody>
+<tr><td><span class="tag t-adm">ADMIN</span></td>
+<td>Semua halaman. PC Management (tambah/hapus/ganti nama/tandai rusak/buka kunci), Pengaturan, laporan tutup hari, diagnostik, administrator teknisi.</td>
+<td>&mdash;</td></tr>
+<tr><td><span class="tag t-any">KASIR</span></td>
+<td>Dashboard (mulai/kunci/matikan PC, buat voucher/member, topup, tarik), daftar akun, dan aplikasi mobile.</td>
+<td>Tidak bisa PC Management, Transaksi, Laporan, Pengaturan. Menu disembunyikan <b>dan</b> rute dijaga.</td></tr>
+<tr><td><span class="tag t-pub">Pelanggan</span></td>
+<td>Hanya mengetik kode di layar kunci PC. Tidak punya akun di web.</td>
+<td>&mdash;</td></tr>
+<tr><td><span class="tag t-pub">Teknisi</span></td>
+<td>Buka PC tanpa penagihan lewat dialog <code class="inl">maintenance</code> di pojok kiri bawah layar kunci.</td>
+<td>Tidak masuk hitungan pendapatan: sesi teknisi tidak membuat baris <code class="inl">Session</code> maupun <code class="inl">Transaction</code>.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="box good">
+  <span class="bt">Catatan soal peran KASIR</span>
+  Menu disembunyikan berdasarkan flag <code class="inl">adminOnly</code> di <code class="inl">Layout.tsx</code>,
+  <b>dan</b> halaman PC dijaga lagi di dalam komponennya. Kalau hanya disembunyikan,
+  kasir masih bisa masuk lewat mengetik <code class="inl">/pcs</code> atau bookmark lama.
+  Pengaman di rute wajib, bukan hanya di menu.
+</div>
+
+<h2 id="database">Struktur Database</h2>
+<p class="lead">
+Database memakai <b>PostgreSQL 15</b>. Seluruh data aplikasi &mdash; akun pelanggan, PC,
+sesi, transaksi, pengaturan &mdash; berada di satu database bernama
+<code class="inl">v3netbill</code>. Skema ditulis dengan <b>Prisma</b> di
+<code class="inl">backend/prisma/schema.prisma</code>.
+</p>
+
+<h3>Mesin, koneksi, dan cara akses</h3>
+<div class="grid g3">
+  <div class="stat"><div class="n">PostgreSQL</div><div class="l">Versi 15 &middot; container <code class="inl">postgres-15</code></div></div>
+  <div class="stat"><div class="n">v3netbill</div><div class="l">Nama database</div></div>
+  <div class="stat"><div class="n">12</div><div class="l">Jumlah tabel</div></div>
+</div>
+
+<div class="tblwrap">
+<table>
+<thead><tr><th>Hal</th><th>Nilai</th></tr></thead>
+<tbody>
+<tr><td>Host database (dari dalam container backend)</td><td><code class="inl">postgres-15</code>, port <code class="inl">5432</code></td></tr>
+<tr><td>User database</td><td><code class="inl">billing_user</code></td></tr>
+<tr><td>Password</td><td>Disimpan di berkas <code class="inl">.env</code> project root. <b>Tidak ditulis di dokumen ini.</b></td></tr>
+<tr><td>URL koneksi (di <code class="inl">.env</code>)</td><td><code class="inl">postgresql://billing_user:&lt;password&gt;@postgres-15:5432/v3netbill?schema=public</code></td></tr>
+<tr><td>Akses dari host</td><td><code class="inl">docker exec postgres-15 psql -U billing_user -d v3netbill</code></td></tr>
+<tr><td>Jaringan Docker</td><td><code class="inl">war-nt-web_default</code> (di compose backend dinamai <code class="inl">postgres-network</code>)</td></tr>
+<tr><td>Backup otomatis</td><td>Tiap hari 01:00 WIB, retensi 30 hari</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="box bad">
+  <span class="bt">Zona waktu database harus tetap UTC</span>
+  Kolom <code class="inl">timestamp</code> seperti <code class="inl">Session.createdAt</code> memakai
+  <code class="inl">DEFAULT CURRENT_TIMESTAMP</code>, yang dihitung PostgreSQL dari
+  <b>TimeZone session database</b>. Kalau <code class="inl">postgres-15</code> di-set
+  <code class="inl">Asia/Jakarta</code>, setiap baris baru tersimpan bergeser +7 jam dan dibaca
+  Prisma sebagai UTC &mdash; jendela void, retensi, rekap, dan sesi langsung salah.
+  <br><b>Yang boleh WIB:</b> host, dan container aplikasi (<code class="inl">TZ=Asia/Jakarta</code> di compose).
+  <b>Yang wajib UTC:</b> <code class="inl">postgres-15</code> sendiri.
+</div>
+
+<h3>Daftar seluruh tabel</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>#</th><th>Tabel</th><th>Isi</th><th>Sering diubah?</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code class="inl">User</code></td><td>Akun operator (admin &amp; kasir) yang login ke web/mobile.</td><td>Jarang</td></tr>
+<tr><td>2</td><td><code class="inl">Perangkat</code></td><td>Token FCM untuk push notifikasi ke HP admin.</td><td>Otomatis</td></tr>
+<tr><td>3</td><td><code class="inl">Pc</code></td><td>Daftar komputer kasir: nama, token agent, IP, status, daya, versi agent.</td><td>Sering</td></tr>
+<tr><td>4</td><td><code class="inl">Account</code></td><td>Saldo &amp; kredensial pelanggan: voucher dan member.</td><td>Sangat sering</td></tr>
+<tr><td>5</td><td><code class="inl">Session</code></td><td>Sesi billing yang sedang atau pernah berjalan. Sumber kebenaran waktu.</td><td>Tiap detik</td></tr>
+<tr><td>6</td><td><code class="inl">Transaction</code></td><td>Setiap pembuatan voucher/member, topup, dan penarikan.</td><td>Sering</td></tr>
+<tr><td>7</td><td><code class="inl">Teknisi</code></td><td>Akun teknisi (mode maintenance). Tidak masuk tagihan.</td><td>Jarang</td></tr>
+<tr><td>8</td><td><code class="inl">SesiTeknisi</code></td><td>Jejak sesi teknisi yang sedang berjalan. Bukan penagihan.</td><td>Jarang</td></tr>
+<tr><td>9</td><td><code class="inl">UptimePc</code></td><td>Rekap detik nyala per PC per hari. Dasar grafik &amp; hitungan listrik.</td><td>Otomatis, 60 dtk</td></tr>
+<tr><td>10</td><td><code class="inl">DailyReport</code></td><td>Rekap harian yang sudah dihitung (cache laporan).</td><td>On-read</td></tr>
+<tr><td>11</td><td><code class="inl">Setting</code></td><td>Konfigurasi key-value (tarif, PIN, token, path file).</td><td>Sering</td></tr>
+<tr><td>12</td><td><code class="inl">ActivityLog</code></td><td>Jejak aktivitas untuk audit (siapa, kapan, PC mana).</td><td>Otomatis</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="db-view">Hubungan antar tabel</h3>
+<div class="codehead">Diagram relasi<span></span></div>
+<pre><code>   User (operator)
+     |  1
+     |  +---&lt; Transaction.kasirId      (RESTRICT)
+     +------&lt; Perangkat.userId          (CASCADE)
+
+   Pc (komputer kasir)
+     |  1
+     |  +---&lt; Session.pcId             (RESTRICT)
+     +------&lt; UptimePc.pcId             (CASCADE)
+
+   Account (voucher / member)
+     |  1
+     |  +---&lt; Session.accountId        (RESTRICT)
+     +------&lt; Transaction.accountId     (RESTRICT)
+
+   Teknisi (mode maintenance)
+     +  (TIDAK punya relasi sama sekali ke tabel lain)
+
+   SesiTeknisi (sesi teknisi berjalan)
+     +  pcId &mdash; kolom biasa, BUKAN foreign key ke Pc</code></pre>
+
+<div class="box warn">
+  <span class="bt">Kenapa Teknisi dan SesiTeknisi berdiri sendiri</span>
+  Ini keputusan desain, bukan sekadar pilihan teknis:
+  <ol style="margin:4px 0 0">
+    <li><code class="inl">Session.accountId</code> punya FK <code class="inl">RESTRICT</code> yang <b>tidak boleh null</b>. Memaksakan teknisi lewat <code class="inl">Account</code> berarti mengubah skema jalur yang sedang menagih pelanggan.</li>
+    <li><code class="inl">Account</code> selalu menghasilkan <code class="inl">Transaction</code> dan <code class="inl">Session</code> yang ikut rekap pendapatan. Teknisi justru harus <b>tidak</b> masuk hitungan itu.</li>
+    <li><code class="inl">Account.nama</code> adalah <b>kredensial login pelanggan</b> dan ikut tampil di daftar akun &mdash; tidak pantas dipakai untuk kredensial teknisi.</li>
+  </ol>
+</div>
+
+<h3>Enum (tipe data khusus PostgreSQL)</h3>
+<div class="grid g2">
+<div class="tblwrap"><table>
+<thead><tr><th>Enum</th><th>Nilai yang mungkin</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">Role</code></td><td><code class="inl">ADMIN</code>, <code class="inl">KASIR</code></td></tr>
+<tr><td><code class="inl">PcStatus</code></td><td><code class="inl">IDLE</code>, <code class="inl">ACTIVE</code>, <code class="inl">OFFLINE</code></td></tr>
+<tr><td><code class="inl">AccountType</code></td><td><code class="inl">VOUCHER</code>, <code class="inl">MEMBER</code></td></tr>
+<tr><td><code class="inl">AccountStatus</code></td><td><code class="inl">ACTIVE</code>, <code class="inl">REVOKED</code>, <code class="inl">EXPIRED</code></td></tr>
+<tr><td><code class="inl">SessionStatus</code></td><td><code class="inl">BERJALAN</code>, <code class="inl">SELESAI</code>, <code class="inl">DISTOP</code> <span class="muted small">(tidak pernah ditulis kode)</span></td></tr>
+<tr><td><code class="inl">TransactionType</code></td><td><code class="inl">BELI_BARU</code>, <code class="inl">TOPUP</code>, <code class="inl">KOREKSI</code></td></tr>
+</tbody>
+</table></div>
+<div class="card">
+<h4>Bedakan <code class="inl">VOUCHER</code> dan <code class="inl">MEMBER</code></h4>
+<p class="small"><b>Voucher</b> punya <code class="inl">kodeUnik</code> (6 angka) dan tidak punya nama. Kadaluwarsa kalau &gt;30 hari tidak dipakai.</p>
+<p class="small"><b>Member</b> <b>tidak punya</b> <code class="inl">kodeUnik</code> sama sekali &mdash; yang dipakai login adalah kolom <code class="inl">nama</code>. Nama itu jadi <b>kredensial</b>, jadi panjangnya dibatasi 4&ndash;40 karakter.</p>
+<p class="small"><b>Password awal semua akun baru = <code class="inl">0000</code></b> (bukan acak). Pelanggan menggantinya sendiri dari layar PC.</p>
+</div>
+</div>
+
+<h3 id="db-kolom">Definisi kolom per tabel</h3>
+
+<details><summary>Account &mdash; voucher &amp; member pelanggan</summary><div>
+<p class="small muted">Tabel paling penting. Satu baris = satu Saldo yang bisa dimiliki pelanggan.</p>
+<div class="tblwrap"><table>
+<thead><tr><th>Kolom</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">id</code></td><td>uuid</td><td>Kunci utama, dibuat otomatis.</td></tr>
+<tr><td><code class="inl">tipe</code></td><td>AccountType</td><td><code class="inl">VOUCHER</code> atau <code class="inl">MEMBER</code>.</td></tr>
+<tr><td><code class="inl">kodeUnik</code></td><td>text, unik, <b>nullable</b></td><td>Hanya voucher. 6 angka acak, dicek unik (maks 10 percobaan). Member &rarr; selalu kosong.</td></tr>
+<tr><td><code class="inl">nama</code></td><td>text, nullable</td><td>Hanya member. <b>Ini kredensial login-nya</b>, cocokannya persis (case-sensitive).</td></tr>
+<tr><td><code class="inl">passwordHash</code></td><td>text</td><td>Hash bcrypt. Awalnya dari password <code class="inl">0000</code>.</td></tr>
+<tr><td><code class="inl">sisaWaktuDetik</code></td><td>int</td><td><b>Sisa waktu dalam detik</b>. Sumber tagihan. 0 = habis.</td></tr>
+<tr><td><code class="inl">status</code></td><td>AccountStatus</td><td><code class="inl">ACTIVE</code>, <code class="inl">REVOKED</code> (dinonaktifkan kasir), <code class="inl">EXPIRED</code>.</td></tr>
+<tr><td><code class="inl">createdAt</code></td><td>timestamp</td><td>Kapan dibuat.</td></tr>
+<tr><td><code class="inl">lastUsedAt</code></td><td>timestamp, nullable</td><td>Terakhir dipakai. Dipakai untuk deteksi kedaluwarsa voucher.</td></tr>
+</tbody>
+</table></div>
+<div class="box good"><span class="bt">Rumus sisa waktu</span>
+<code class="inl">sisaWaktuDetik = floor((nominal / harga_per_menit) * 60)</code>.
+Dengan tarif bawaan Rp 150/menit, tiap Rp 2,50 = 1 detik. Nominal wajib <b>kelipatan 500</b> dan minimal 500.
+</div>
+</div></details>
+
+<details><summary>Pc &mdash; komputer kasir</summary><div>
+<div class="tblwrap"><table>
+<thead><tr><th>Kolom</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">id</code></td><td>uuid</td><td>Kunci utama. Inilah identitas PC yang dipakai agent.</td></tr>
+<tr><td><code class="inl">namaPc</code></td><td>text</td><td><b>Label saja, bukan identitas.</b> Tidak ada unique index. Duplikat ditolak 409 di service.</td></tr>
+<tr><td><code class="inl">ipClient</code></td><td>text</td><td>Data <b>tampilan saja</b>. Otomatis dari koneksi agent, bukan diisi manual.</td></tr>
+<tr><td><code class="inl">agentToken</code></td><td>text, <b>unik</b></td><td>Kunci agent ke server. Very sensitive &mdash; cukup untuk ganti password akun &amp; hentikan sesi.</td></tr>
+<tr><td><code class="inl">status</code></td><td>PcStatus</td><td><b>Cache, bukan sumber kebenaran.</b> Sumber kebenaran: <code class="inl">lastHeartbeatAt</code> + sesi <code class="inl">BERJALAN</code>.</td></tr>
+<tr><td><code class="inl">lastHeartbeatAt</code></td><td>timestamp, nullable</td><td>Bukti terakhir agent hidup. Null = dianggap offline. Basi &gt;30 detik = offline.</td></tr>
+<tr><td><code class="inl">rusak</code></td><td>boolean</td><td>Flag operasional: sedang diservis/dikosongkan. Hilang dari dashboard, login, mobile.</td></tr>
+<tr><td><code class="inl">alasanRusak</code></td><td>text, nullable</td><td>Contoh: "ganti hard disk".</td></tr>
+<tr><td><code class="inl">watt</code></td><td>int</td><td>Daya PC dalam <b>watt</b> (bukan VA). Bawaan 150.</td></tr>
+<tr><td><code class="inl">autoUpdate</code></td><td>boolean</td><td>Flag pembaruan otomatis <b>per-PC</b>. Ini kolom, bukan Setting global.</td></tr>
+<tr><td><code class="inl">autoUpdatePesan</code></td><td>text, nullable</td><td>Pesan status update terakhir (mis. alasan gagal).</td></tr>
+<tr><td><code class="inl">autoUpdatePercen</code></td><td>int, nullable</td><td>Progres 0&ndash;100.</td></tr>
+<tr><td><code class="inl">autoUpdateWaktu</code></td><td>timestamp, nullable</td><td>Kapan flag terakhir diubah.</td></tr>
+<tr><td><code class="inl">terakhirAktifAt</code></td><td>timestamp, nullable</td><td>Dasar hitung mundur auto-matikan. <b>Jangan</b> di-update dari heartbeat.</td></tr>
+<tr><td><code class="inl">versiAgent</code></td><td>text, nullable</td><td>Dilaporkan agent saat konek. Null = belum diketahui, bukan berarti tertua.</td></tr>
+<tr><td><code class="inl">rustdeskId</code></td><td>text, nullable</td><td>ID RustDesk untuk perbaikan jarak jauh. Ditulis agent kalau berubah.</td></tr>
+<tr><td><code class="inl">rustdeskPasswordHash</code></td><td>text, nullable</td><td>Sisa kolom lama. <b>Tidak pernah ditulis &amp; tidak ditampilkan lagi.</b></td></tr>
+</tbody>
+</table></div>
+</div></details>
+
+<details><summary>Session &mdash; sesi billing</summary><div>
+<div class="tblwrap"><table>
+<thead><tr><th>Kolom</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">id</code></td><td>uuid</td><td>Kunci utama.</td></tr>
+<tr><td><code class="inl">pcId</code></td><td>uuid, FK &rarr; Pc</td><td>PC tempat sesi berjalan. <b>RESTRICT.</b></td></tr>
+<tr><td><code class="inl">accountId</code></td><td>uuid, FK &rarr; Account</td><td>Akun yang dipakai. <b>RESTRICT, wajib isi.</b></td></tr>
+<tr><td><code class="inl">waktuMulai</code></td><td>timestamp</td><td>Dasar perhitungan durasi terpakai.</td></tr>
+<tr><td><code class="inl">waktuSelesai</code></td><td>timestamp, nullable</td><td>Diisi saat sesi berhenti.</td></tr>
+<tr><td><code class="inl">durasiTerpakaiDetik</code></td><td>int</td><td>Berapa detik yang sudah terpakai. Diperbarui tiap detik.</td></tr>
+<tr><td><code class="inl">status</code></td><td>SessionStatus</td><td><code class="inl">BERJALAN</code>, lalu jadi <code class="inl">SELESAI</code>.</td></tr>
+<tr><td><code class="inl">disconnectedAt</code></td><td>timestamp, nullable</td><td>Ada untuk mekanisme grace period (lihat catatan di bawah).</td></tr>
+</tbody>
+</table></div>
+<div class="box info"><span class="bt">Tidak ada kolom <code class="inl">alasan</code></span>
+Alasan berhenti (<code class="inl">habis</code>, <code class="inl">manual</code>,
+<code class="inl">disconnect_timeout</code>, <code class="inl">akun_nonaktif</code>)
+tidak disimpan di tabel &mdash; hanya ikut di payload <code class="inl">ActivityLog.detail</code>.
+Jadi menambah alasan baru <b>tidak butuh migrasi</b>.
+</div>
+<div class="box bad"><span class="bt">Indeks unik parsial yang tidak terlihat di schema.prisma</span>
+<pre><code>CREATE UNIQUE INDEX "Session_accountId_berjalan_key"
+  ON "Session" ("accountId") WHERE "status" = 'BERJALAN';</code></pre>
+Mencegah satu akun dipakai di dua PC sekaligus. Berlaku hanya di SQL migrasi
+(<code class="inl">20261007060000_session_satu_berjalan_per_akun</code>), jadi
+tidak terlihat di <code class="inl">schema.prisma</code>. <b>Jangan dihapus</b> kalau
+<code class="inl">prisma migrate</code> mengeluh soal drift.
+</div>
+</div></details>
+
+<details><summary>Transaction &mdash; riwayat uang</summary><div>
+<div class="tblwrap"><table>
+<thead><tr><th>Kolom</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">id</code></td><td>uuid</td><td>Kunci utama.</td></tr>
+<tr><td><code class="inl">accountId</code></td><td>uuid, FK &rarr; Account</td><td><b>RESTRICT.</b></td></tr>
+<tr><td><code class="inl">nominal</code></td><td>int</td><td>Rupiah. Untuk <code class="inl">KOREKSI</code> bernilai <b>negatif</b>.</td></tr>
+<tr><td><code class="inl">durasiMenit</code></td><td>int</td><td>Menit (bisa negatif).</td></tr>
+<tr><td><code class="inl">durasiDetik</code></td><td>int</td><td>Detik (bisa negatif). Inilah angka sebenarnya untuk pengurangan saldo.</td></tr>
+<tr><td><code class="inl">jenis</code></td><td>TransactionType</td><td><code class="inl">BELI_BARU</code>, <code class="inl">TOPUP</code>, <code class="inl">KOREKSI</code>.</td></tr>
+<tr><td><code class="inl">kasirId</code></td><td>uuid, FK &rarr; User</td><td>Siapa yang melakukan. <b>RESTRICT</b> &mdash; jadi <code class="inl">User</code> tidak bisa dihapus selama ada transaksinya.</td></tr>
+<tr><td><code class="inl">dibatalkan</code></td><td>timestamp, nullable</td><td>Kalau dibatalkan, <code class="inl">nominal</code>-nya tidak lagi dihitung pendapatan.</td></tr>
+<tr><td><code class="inl">dibatalkanOleh</code></td><td>text, nullable</td><td>Alasan pembatalan.</td></tr>
+<tr><td><code class="inl">createdAt</code></td><td>timestamp</td><td>Kapan terjadi.</td></tr>
+</tbody>
+</table></div>
+</div></details>
+
+<details><summary>Teknisi &amp; SesiTeknisi &mdash; mode maintenance</summary><div>
+<div class="tblwrap"><table>
+<thead><tr><th>Tabel \ Kolom</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+<tbody>
+<tr><td colspan="3" style="background:#f8fafc"><b>Teknisi</b> &mdash; akun teknisi</td></tr>
+<tr><td><code class="inl">id</code></td><td>uuid</td><td>Kunci utama.</td></tr>
+<tr><td><code class="inl">username</code></td><td>text, <b>unik</b></td><td>Maks 6 karakter (harus sama dengan batas XAML). Tidak boleh sama dengan nama/kode akun pelanggan.</td></tr>
+<tr><td><code class="inl">passwordHash</code></td><td>text</td><td>Hash bcrypt PIN.</td></tr>
+<tr><td><code class="inl">aktif</code></td><td>boolean</td><td>Sakelar kill-switch. Kalau dimatikan, semua PC teknisi langsung terkunci.</td></tr>
+<tr><td><code class="inl">createdAt</code> / <code class="inl">updatedAt</code></td><td>timestamp</td><td>&mdash;</td></tr>
+<tr><td colspan="3" style="background:#f8fafc"><b>SesiTeknisi</b> &mdash; jejak akses teknisi</td></tr>
+<tr><td><code class="inl">id</code></td><td>uuid</td><td>Kunci utama.</td></tr>
+<tr><td><code class="inl">pcId</code></td><td>text</td><td><b>Bukan foreign key</b> ke Pc. Cuma kolom biasa.</td></tr>
+<tr><td><code class="inl">username</code></td><td>text</td><td>Siapa teknisinya.</td></tr>
+<tr><td><code class="inl">mulaiAt</code></td><td>timestamp</td><td>Kapan mulai.</td></tr>
+<tr><td><code class="inl">selesaiAt</code></td><td>timestamp, <b>nullable</b></td><td>Kosong = <b>masih berjalan</b>. Sumber masalah auto-matikan yang sering muncul.</td></tr>
+</tbody>
+</table></div>
+<div class="box bad"><span class="bt">SesiTeknisi yang menggantung = PC tidak akan pernah mati sendiri</span>
+Satu baris dengan <code class="inl">selesaiAt</code> kosong membuat
+<code class="inl">checkAutoShutdown</code> melewati PC itu <b>selamanya</b>, karena pengamannya
+menganggap "orang masih di depan PC".PC yang baru boot sudah menutup sisa menggantung
+otomatis; kalau mencurigai ada yang nyangkut, cek dengan query di bawah.
+</div>
+</div></details>
+
+<details><summary>User, Perangkat, UptimePc, DailyReport, ActivityLog, Setting</summary><div>
+
+<p><b>User</b> &mdash; operator</p>
+<div class="tblwrap"><table>
+<thead><tr><th>Kolom</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">id</code></td><td>uuid</td><td>Kunci utama.</td></tr>
+<tr><td><code class="inl">username</code></td><td>text, <b>unik</b></td><td>Nama login. Maks 50 karakter.</td></tr>
+<tr><td><code class="inl">passwordHash</code></td><td>text</td><td>Hash bcrypt. Min 6 karakter.</td></tr>
+<tr><td><code class="inl">role</code></td><td>Role</td><td><code class="inl">ADMIN</code> atau <code class="inl">KASIR</code>.</td></tr>
+<tr><td><code class="inl">createdAt</code></td><td>timestamp</td><td>&mdash;</td></tr>
+</tbody>
+</table></div>
+
+<p><b>Perangkat</b> &mdash; token push FCM</p>
+<div class="tblwrap"><table>
+<thead><tr><th>Kolom</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">id</code></td><td>uuid</td><td>Kunci utama.</td></tr>
+<tr><td><code class="inl">token</code></td><td>text, <b>unik</b></td><td>Token FCM dari HP.</td></tr>
+<tr><td><code class="inl">platform</code></td><td>text</td><td>Bawaan <code class="inl">android</code>.</td></tr>
+<tr><td><code class="inl">userId</code></td><td>uuid, FK &rarr; User</td><td><b>CASCADE</b> &mdash; hapus user, semua token ikut hilang.</td></tr>
+<tr><td><code class="inl">createdAt</code> / <code class="inl">lastSeenAt</code></td><td>timestamp</td><td>&mdash;</td></tr>
+</tbody>
+</table></div>
+
+<p><b>UptimePc</b> &mdash; rekap detik nyala per PC per hari</p>
+<div class="tblwrap"><table>
+<thead><tr><th>Kolom</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">pcId</code> + <code class="inl">tanggal</code></td><td>uuid + date</td><td><b>Kunci utama gabungan.</b> <code class="inl">tanggal</code> = tengah malam WIB.</td></tr>
+<tr><td><code class="inl">detikOnline</code></td><td>int</td><td>Akumulasi detik nyala. Batas atas 86.400 per hari per PC.</td></tr>
+<tr><td><code class="inl">dihitungSampai</code></td><td>timestamp</td><td><b>Watermark.</b> Mencegah penghitungan ganda: hanya selisih sejak watermark terakhir yang ditambah.</td></tr>
+<tr><td><code class="inl">pcId</code></td><td>uuid, FK &rarr; Pc</td><td><b>CASCADE.</b> PC yang ditandai rusak dilewati saat penghitungan.</td></tr>
+</tbody>
+</table></div>
+<p class="small muted">Disampel tiap 60 detik (bukan 15 &mdash; heartbeat terlalu rapat, tabelnya membengkak tanpa manfaat). Perkiraan 5 MB/tahun, bukan 1,5 GB seperti kalau tiap heartbeat disimpan.</p>
+
+<p><b>DailyReport</b> &mdash; cache rekap harian</p>
+<div class="tblwrap"><table>
+<thead><tr><th>Kolom</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">tanggal</code></td><td>date, <b>unik</b></td><td>Kunci utama. Satu baris per hari buku (batas 23:30 WIB).</td></tr>
+<tr><td><code class="inl">totalLogin</code></td><td>int</td><td>Jumlah sesi yang mulai di hari itu. <b>Termasuk sesi teknisi? Tidak</b> &mdash; teknisi tidak punya baris Session.</td></tr>
+<tr><td><code class="inl">voucherTerbentuk</code>, <code class="inl">voucherTopup</code>, <code class="inl">memberTerbentuk</code>, <code class="inl">memberTopup</code></td><td>int</td><td>Jumlah masing-masing jenis aktivitas.</td></tr>
+<tr><td><code class="inl">pendapatanVoucher</code>, <code class="inl">pendapatanMember</code></td><td>int</td><td>Jumlah rupiah (transaksi <code class="inl">KOREKSI</code> mengurangi).</td></tr>
+</tbody>
+</table></div>
+<p class="small muted">Tabel ini hanya <b>cache</b>: nilainya dihitung ulang on-read dari <code class="inl">Session</code> + <code class="inl">Transaction</code> setiap kali laporan dibuka, lalu di-<code class="inl">upsert</code> ke sini. Sumber kebenaran tetap dua tabel itu.</p>
+
+<p><b>ActivityLog</b> &mdash; jejak audit</p>
+<div class="tblwrap"><table>
+<thead><tr><th>Kolom</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">id</code></td><td>uuid</td><td>Kunci utama.</td></tr>
+<tr><td><code class="inl">event</code></td><td>text</td><td>Jenis kejadian, mis. <code class="inl">session:started</code>, <code class="inl">pc_shutdown_auto</code>.</td></tr>
+<tr><td><code class="inl">detail</code></td><td>text, nullable</td><td><b>JSON mentah</b>. Frontend harus parse sendiri; field yang tidak dipetakan hilang diam-diam.</td></tr>
+<tr><td><code class="inl">pcId</code> / <code class="inl">accountId</code> / <code class="inl">kasirId</code></td><td>uuid, nullable</td><td>Referensi cepat tanpa parse JSON.</td></tr>
+<tr><td><code class="inl">createdAt</code></td><td>timestamp</td><td>Diindeks. Retensi 30 hari.</td></tr>
+</tbody>
+</table></div>
+
+<p><b>Setting</b> &mdash; konfigurasi key-value</p>
+<div class="tblwrap"><table>
+<thead><tr><th>Kolom</th><th>Tipe</th><th>Keterangan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">key</code></td><td>text</td><td>Kunci utama. &mdash;</td></tr>
+<tr><td><code class="inl">value</code></td><td>text</td><td><b>Semua nilai disimpan sebagai teks</b>, termasuk angka dan boolean (<code class="inl">"true"</code>/<code class="inl">"false"</code>).</td></tr>
+</tbody>
+</table></div>
+<div class="box good"><span class="bt">Menambah setting baru TIDAK butuh migrasi</span>
+Cukup satu baris di tabel <code class="inl">Setting</code>. Barisnya dibuat otomatis
+saat pertama kali disimpan lewat <code class="inl">upsert</code>. <b>Jangan</b> menjalankan
+<code class="inl">prisma migrate</code> hanya untuk menambah key setting.
+</div>
+</div></details>
+
+<h3 id="db-setting">Semua key di tabel Setting</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Key</th><th>Bawaan</th><th>Arti &amp; tempat diubah</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">harga_per_menit</code></td><td>150</td><td>Harga per menit. Dibaca ulang tiap pembuatan akun, jadi tarif baru langsung berlaku.</td></tr>
+<tr><td><code class="inl">grace_period_detik</code></td><td>180</td><td>Masa tenggang setelah koneksi putus.</td></tr>
+<tr><td><code class="inl">auto_shutdown_menit</code></td><td>5</td><td>Menit menganggur sebelum PC dimatikan. <b>0 = mati.</b> Diubah di Pengaturan &rarr; Tarif.</td></tr>
+<tr><td><code class="inl">harga_per_kwh</code></td><td>1444,70</td><td>Tarif listrik per kWh (PLN 1300&ndash;2200 VA). Dibaca tiap permintaan.</td></tr>
+<tr><td><code class="inl">laporan_email_tujuan</code></td><td>kosong</td><td>Daftar penerima laporan tutup hari. Kalau kosong, pakai variabel <code class="inl">LAPORAN_EMAIL_TUJUAN</code>.</td></tr>
+<tr><td><code class="inl">agent_prevent_sleep</code></td><td><b>"true"</b></td><td>Cegah PC tidur &amp; layar mati. Default <b>true</b> dengan sengaja: PC yang belum pernah disentuh tidak boleh tertidur di tengah sesi.</td></tr>
+<tr><td><code class="inl">pin_bypass_hash</code></td><td>kosong</td><td>Hash bcrypt PIN bypass/maintenance. Kosong = semua PC pakai PIN darurat <code class="inl">123456</code>.</td></tr>
+<tr><td><code class="inl">pin_uninstall_hash</code></td><td>kosong</td><td>Hash bcrypt PIN uninstall.</td></tr>
+<tr><td><code class="inl">agent_otp_bot_token</code></td><td>kosong</td><td>Token bot Telegram untuk OTP teknisi. <b>Sangat sensitif.</b></td></tr>
+<tr><td><code class="inl">agent_otp_chat_id</code></td><td>kosong</td><td>Chat ID tujuan OTP.</td></tr>
+<tr><td><code class="inl">nextcloud_url</code>, <code class="inl">nextcloud_user</code>, <code class="inl">nextcloud_password</code>, <code class="inl">nextcloud_folder</code></td><td>URL/folder</td><td>Tujuan upload log agent ke Nextcloud. Folder bawaan <code class="inl">log-pc-warnet</code>.</td></tr>
+<tr><td><code class="inl">installer_meta</code></td><td>&mdash;</td><td>JSON: <code class="inl">filename, sizeBytes, uploadedAt, versionName, sha256</code> untuk MSI aktif.</td></tr>
+<tr><td><code class="inl">apk_meta</code></td><td>&mdash;</td><td>JSON: <code class="inl">filename, sizeBytes, uploadedAt, versionCode, versionName, sha256</code> untuk APK aktif.</td></tr>
+<tr><td><code class="inl">wallpaper_lockscreen_path</code></td><td>&mdash;</td><td>Path wallpaper layar kunci.</td></tr>
+<tr><td><code class="inl">backup_last</code></td><td>&mdash;</td><td>JSON backup terakhir: <code class="inl">filename, sizeBytes, createdAt</code>.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="box bad">
+  <span class="bt">JANGAN pernah mencetak isi <code class="inl">GET /api/settings</code> ke dokumen mana pun</span>
+  Endpoint itu mengembalikan <b>seluruh</b> isi tabel <code class="inl">Setting</code> &mdash;
+  termasuk token bot Telegram yang <b>aktif</b>, kedua hash PIN, dan password Nextcloud dalam
+  bentuk jelas. Untuk kebutuhan laporan, ambil nilainya <b>di dalam perintah</b>,
+  jangan diketik di baris perintah atau ditulis ke file teks mana pun.
+  <br>Yang aman untuk ditampilkan frontend adalah endpoint <code class="inl">/settings/apk/info</code>
+  dan <code class="inl">/settings/installer/info</code> &mdash; hanya 5&ndash;6 field yang tidak sensitif.
+</div>
+
+<h3>Index dan batasan penting</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Batasan</th><th>Objek</th><th>Kenapa penting</th></tr></thead>
+<tbody>
+<tr><td>UNIQUE</td><td><code class="inl">User.username</code></td><td>Mencegah dua operator dengan nama sama.</td></tr>
+<tr><td>UNIQUE</td><td><code class="inl">Pc.agentToken</code></td><td>Menjadi kunci agent. INDEX paling hot di tabel <code class="inl">Pc</code>.</td></tr>
+<tr><td>UNIQUE</td><td><code class="inl">Account.kodeUnik</code></td><td>Menjaga kode voucher selalu unik.</td></tr>
+<tr><td>UNIQUE</td><td><code class="inl">Perangkat.token</code></td><td>Mencegah token FCM dobel.</td></tr>
+<tr><td>UNIQUE</td><td><code class="inl">Teknisi.username</code></td><td>Satu akun teknisi = satu baris.</td></tr>
+<tr><td>UNIQUE</td><td><code class="inl">DailyReport.tanggal</code></td><td>Membuat <code class="inl">upsert</code> aman.</td></tr>
+<tr><td>PK gabungan</td><td><code class="inl">UptimePc(pcId, tanggal)</code></td><td>Satu baris per PC per hari.</td></tr>
+<tr><td>INDEX</td><td><code class="inl">ActivityLog.createdAt</code></td><td>Activity log selalu diurutkan waktu.</td></tr>
+<tr><td>INDEX</td><td><code class="inl">SesiTeknisi.pcId</code> + <code class="inl">.username</code></td><td>Mempercepat deteksi sesi teknisi aktif.</td></tr>
+<tr><td><b>Tidak ada</b></td><td>UNIQUE di <code class="inl">Pc.namaPc</code></td><td>Disengaja. Nama PC itu label. Duplikat dicek di service (409), bukan index.</td></tr>
+<tr><td>UNIQUE parsial</td><td><code class="inl">Session(accountId) WHERE status='BERJALAN'</code></td><td>Mencegah satu akun jalan di 2 PC. Hanya di SQL migrasi.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Aturan penghapusan (FK)</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Relasi</th><th>Perilaku</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">Session.pcId</code>, <code class="inl">Session.accountId</code>, <code class="inl">Transaction.accountId</code>, <code class="inl">Transaction.kasirId</code></td><td><b>RESTRICT</b> &mdash; tidak bisa dihapus selama masih dirujuk.</td></tr>
+<tr><td><code class="inl">Perangkat.userId</code>, <code class="inl">UptimePc.pcId</code></td><td><b>CASCADE</b> &mdash; ikut terhapus.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3 id="db-query">Query &amp; perintah perawatan database</h3>
+
+<h4>Perintah harian</h4>
+<div class="codehead">Masuk ke database<span></span></div>
+<pre><code>docker exec postgres-15 psql -U billing_user -d v3netbill</code></pre>
+
+<div class="codehead">Status semua PC<span></span></div>
+<pre><code>docker exec postgres-15 psql -U billing_user -d v3netbill -c \
+"SELECT \"namaPc\", \"versiAgent\", \"autoUpdate\", \"status\",
+        \"lastHeartbeatAt\"
+ FROM \"Pc\" ORDER BY \"namaPc\";"</code></pre>
+
+<h4>Mencari masalah</h4>
+<div class="codehead">Sesi teknisi yang menggantung (penyebab PC tidak pernah auto-matikan)<span></span></div>
+<pre><code>SELECT * FROM "SesiTeknisi" WHERE "selesaiAt" IS NULL;</code></pre>
+
+<div class="codehead">Sesi yang sedang berjalan<span></span></div>
+<pre><code>SELECT s.id, p."namaPc", a."kodeUnik", a."nama", s."durasiTerpakaiDetik"
+  FROM "Session" s
+  JOIN "Pc" p ON p.id = s."pcId"
+  JOIN "Account" a ON a.id = s."accountId"
+ WHERE s.status = 'BERJALAN';</code></pre>
+
+<div class="codehead">PC yang heartbeat-nya basi (>&gt; 30 detik)<span></span></div>
+<pre><code>SELECT "namaPc", "status", "lastHeartbeatAt",
+       EXTRACT(EPOCH FROM (now() - "lastHeartbeatAt"))::int AS detik_lalu
+  FROM "Pc"
+ WHERE "lastHeartbeatAt" IS NULL
+    OR "lastHeartbeatAt" &lt; now() - interval '30 seconds'
+ ORDER BY "lastHeartbeatAt" NULLS FIRST;</code></pre>
+
+<div class="codehead">Hitung ulang rekap harian setelah perbaikan data<span></span></div>
+<pre><code>-- Hapus cache supaya dihitung ulang on-read saat laporan dibuka
+DELETE FROM "DailyReport" WHERE "tanggal" = '2026-10-13';</code></pre>
+
+<h4>Backup dan restore</h4>
+<div class="codehead">Backup<span></span></div>
+<pre><code># Cara resmi: Pengaturan &rarr; Data &rarr; "Buat Backup Sekarang"
+# Backup otomatis juga jalan tiap 01:00 WIB
+
+# Backup manual dari host:
+docker exec v3netbill-backend pg_dump \
+  -U billing_user -d v3netbill --no-owner --clean \
+  &gt; /home/warnet/docker/v3netbill/data/backup/manual.sql</code></pre>
+
+<div class="codehead">Restore<span></span></div>
+<pre><code>docker cp /path/ke/backup.sql postgres-15:/tmp/restore.sql
+docker exec postgres-15 psql -U billing_user -d v3netbill -f /tmp/restore.sql</code></pre>
+
+<div class="box warn"><span class="bt">Urutan hapus data itu penting</span>
+Karena <code class="inl">Transaction.accountId</code> dan <code class="inl">Session.accountId</code>
+punya <code class="inl">ON DELETE RESTRICT</code>, menghapus <code class="inl">Account</code>
+duluan akan ditolak PostgreSQL. Urutan yang benar:
+<code class="inl">Transaction</code> &rarr; <code class="inl">Session</code> &rarr;
+<code class="inl">Account</code>. <code class="inl">User</code> tidak boleh dihapus selama
+ masih ada transaksinya.
+</div>
+
+<h4>Contoh query berguna</h4>
+<div class="codehead">Laporan pendapatan sederhana dari query langsung<span></span></div>
+<pre><code>SELECT date_trunc('day', "createdAt") AS hari,
+       SUM("nominal")  AS pendapatan,
+       COUNT(*)        AS jumlah_transaksi
+  FROM "Transaction"
+ WHERE "dibatalkan" IS NULL
+   AND "createdAt" &gt;= now() - interval '7 days'
+ GROUP BY 1
+ ORDER BY 1 DESC;</code></pre>
+
+<div class="codehead">Saldo seluruh member aktif<span></span></div>
+<pre><code>SELECT COUNT(*) AS jml_member,
+       SUM("sisaWaktuDetik") / 3600.0 AS total_jam,
+       AVG("sisaWaktuDetik") / 3600.0 AS rata_rata_jam
+  FROM "Account"
+ WHERE tipe = 'MEMBER' AND status = 'ACTIVE';</code></pre>
+
+<h4>Perawatan berkala</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Waktu</th><th>Otomatis oleh</th><th>Yang dihapus</th></tr></thead>
+<tbody>
+<tr><td>01:00 WIB</td><td>cron <code class="inl">auto-backup</code></td><td>Backup &gt; 30 hari</td></tr>
+<tr><td>02:00 WIB</td><td>cron <code class="inl">cleanup-activity-logs</code></td><td><code class="inl">ActivityLog</code> &gt; 30 hari</td></tr>
+<tr><td>03:00 WIB</td><td>cron <code class="inl">cleanup-log-billing</code></td><td>Berkas log billing &gt; 30 hari</td></tr>
+<tr><td>04:00 WIB</td><td>cron <code class="inl">cleanup-diagnosa</code></td><td>Paket diagnosa &gt; 14 hari</td></tr>
+<tr><td>23:30 WIB</td><td>cron <code class="inl">tutup-hari-laporan</code></td><td>&mdash; (membuat PDF, kirim email &amp; Telegram)</td></tr>
+<tr><td>Tiap 6 jam</td><td><code class="inl">UptimeService</code></td><td><code class="inl">UptimePc</code> &gt; 90 hari</td></tr>
+</tbody>
+</table>
+</div>
+<p class="small muted">
+Catatan: empat cron pertama tidak punya <code class="inl">timeZone</code> eksplisit,
+jadi mengikuti jam container (WIB). Hanya <code class="inl">tutup-hari-laporan</code> yang
+dipatok <code class="inl">Asia/Jakarta</code>.
+</p>
+
+<h4>Menjalankan migrasi</h4>
+<div class="codehead">Prisma<span></span></div>
+<pre><code># Buat migrasi baru (ubah schema.prisma dulu)
+docker compose exec v3netbill-backend npx prisma migrate dev --name nama_perubahan
+
+# Terapkan migrasi yang sudah ada (produksi)
+docker compose exec v3netbill-backend npx prisma migrate deploy
+
+# Regenerate client
+docker compose exec v3netbill-backend npx prisma generate
+
+# Seed (hanya dua setting dasar)
+docker compose exec v3netbill-backend npx prisma db seed</code></pre>
+<div class="box bad"><span class="bt">Prima WAJIB dipin di 5.22.x</span>
+Format schema di Prisma 7.x tidak kompatibel. <b>Jangan</b> menaikkan versi.
+</div>
+
+<h4>Migrasi yang sudah diterapkan</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Nomor</th><th>Nama</th><th>Isi</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code class="inl">20260922142242_init</code></td><td>Tabel &amp; enum dasar</td></tr>
+<tr><td>2</td><td><code class="inl">20260925072311_add_transaction_koreksi</code></td><td>Jenis transaksi KOREKSI</td></tr>
+<tr><td>3</td><td><code class="inl">20260925072645_add_transaction_void</code></td><td>Pembatalan transaksi</td></tr>
+<tr><td>4</td><td><code class="inl">20260925163314_add_activity_log</code></td><td>Jejak audit</td></tr>
+<tr><td>5</td><td><code class="inl">20260930100153_add_perangkat_notifikasi</code></td><td>Token FCM</td></tr>
+<tr><td>6</td><td><code class="inl">20261005083648_pc_rusak</code></td><td>Flag PC rusak</td></tr>
+<tr><td>7</td><td><code class="inl">20261005095854_pc_terakhir_aktif</code></td><td>Timer auto-matikan</td></tr>
+<tr><td>8</td><td><code class="inl">20261005161709_uptime_pc</code></td><td>Rekap uptime</td></tr>
+<tr><td>9</td><td><code class="inl">20261006063414_teknisi</code></td><td>Tabel teknisi</td></tr>
+<tr><td>10</td><td><code class="inl">20261006092711_watt_pc_listrik</code></td><td>Daya PC</td></tr>
+<tr><td>11</td><td><code class="inl">20261007060000_session_satu_berjalan_per_akun</code></td><td>Indeks unik parsial</td></tr>
+<tr><td>12</td><td><code class="inl">20261011083947_versi_agent</code></td><td>Versi agent</td></tr>
+<tr><td>13</td><td><code class="inl">20261012024515_add_rustdesk_to_pc</code></td><td>ID RustDesk</td></tr>
+<tr><td>14</td><td><code class="inl">20261013042019_auto_update_pc</code></td><td>Flag auto-update per-PC</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="frontend">1. Frontend &mdash; Aplikasi Web</h2>
+
+<h3>Teknologi yang dipakai</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Hal</th><th>Nilai</th></tr></thead>
+<tbody>
+<tr><td>Bahasa</td><td>TypeScript &asymp; 6.0 (target ES2023)</td></tr>
+<tr><td>Library UI</td><td>React 19.2</td></tr>
+<tr><td>Routing</td><td>React Router 7.1</td></tr>
+<tr><td>Build tool</td><td>Vite 8.3 (Rolldown)</td></tr>
+<tr><td>Styling</td><td>Tailwind CSS v4 lewat plugin <code class="inl">@tailwindcss/vite</code></td></tr>
+<tr><td>HTTP</td><td>axios 1.7</td></tr>
+<tr><td>Realtime</td><td>socket.io-client 4.8</td></tr>
+<tr><td>Grafik</td><td>recharts 3.10</td></tr>
+<tr><td>Linter</td><td>oxlint 1.81 (bukan ESLint)</td></tr>
+<tr><td>Base image</td><td>node:20</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Cara build dan menjalankan</h3>
+<div class="codehead">Perintah npm<span></span></div>
+<pre><code>npm run dev       # server pengembangan Vite (port 5173)
+npm run build     # tsc -b lalu vite build  -> frontend/dist
+npm run lint      # oxlint
+npm run preview   # lihat hasil build</code></pre>
+
+<div class="codehead">Semua perintah lewat Docker, JANGAN di host<span></span></div>
+<pre><code># Build produksi (INI cara yang benar)
+docker compose exec v3netbill-frontend npm run build
+
+# Lint
+docker compose exec v3netbill-frontend npm run lint
+
+# Log
+docker compose logs -f v3netbill-backend</code></pre>
+
+<div class="box bad"><span class="bt">Build produksi ≠ build image backend</span>
+<code class="inl">docker compose up -d --build v3netbill-backend</code> <b>tidak</b>
+memperbarui halaman yang disajikan domain, karena <code class="inl">./frontend/dist</code>
+di-bind mount ke <code class="inl">/app/frontend-dist</code>. Hasil build di dalam image
+tidak pernah dibaca. Sumber kebenaran tetap
+<code class="inl">docker compose exec v3netbill-frontend npm run build</code>,
+dan build itu <b>tidak butuh</b> restart backend.
+</div>
+
+<h3>Proxy saat pengembangan</h3>
+<pre><code>/api        -&gt;  http://v3netbill-backend:3000
+/socket.io  -&gt;  http://v3netbill-backend:3000  (ws: true)</code></pre>
+<p class="small">
+Dashboard konek ke <code class="inl">window.location.origin + '/session'</code>, <b>bukan</b>
+langsung ke <code class="inl">:3000</code>. Kalau dashboard menggantung di
+&ldquo;Menghubungkan&hellip;&rdquo;, periksa proxy <code class="inl">/socket.io</code> dulu.
+</p>
+
+<h3>Struktur folder</h3>
+<div class="codehead">src/<span></span></div>
+<pre><code>src/
+  main.tsx                  titik masuk: StrictMode &gt; BrowserRouter &gt; AuthProvider &gt; App
+  App.tsx                   &#60;LatarBelakang/&gt; + rute (LoginPage atau Layout)
+  components/
+    Layout.tsx              header, navigasi, jam digital, tombol Keluar
+    LatarBelakang.tsx      foto latar + lapisan putih
+    JamDigital.tsx          jam WIB di header
+    ui/                     Badge, Card, Modal, Table, Tabs, Pagination, PastelCard, ...
+  context/AuthContext.tsx   login, logout, token, peran
+  hooks/
+    useIdleLogout.ts        kunci otomatis 5 menit (khusus ADMIN)
+    usePagination.ts        pagination 15/baris
+  lib/
+    api.ts                  semua panggilan API + penyimpanan token
+    types.ts                bentuk data
+    log-activity.ts         pemetaan label event
+  pages/
+    LoginPage.tsx
+    DashboardPage.tsx
+    PcPage.tsx              + pc/PanelUpdateAuto.tsx
+    AccountsPage.tsx
+    TransactionsPage.tsx
+    ReportsPage.tsx
+    SettingsPage.tsx        + settings/ (7 tab)</code></pre>
+
+<h3>Model sesi dan autentikasi</h3>
+<div class="codehead">Tiga kunci sessionStorage<span></span></div>
+<pre><code>v3netbill_token
+v3netbill_role
+v3netbill_username</code></pre>
+
+<div class="tblwrap">
+<table>
+<thead><tr><th>Aturan</th><th>Kenapa</th></tr></thead>
+<tbody>
+<tr><td>Disimpan di <b>sessionStorage</b>, bukan <code class="inl">localStorage</code></td><td><code class="inl">localStorage</code> bertahan setelah browser ditutup, jadi komputer kasir yang ditinggal masih bisa dibuka siapa pun. Menutup tab langsung menghabisi sesi.</td></tr>
+<tr><td>Reload (F5) tidak mengosongkan</td><td>Refresh biasa bukan alasan logout. Tab baru selalu mulai dari layar login.</td></tr>
+<tr><td>Kunci otomatis 5 menit, <b>hanya ADMIN</b></td><td>Kasir sering menunggu pelanggan datang, jadi tidak dikunci. <code class="inl">useIdleLogout</code> dipasang di <code class="inl">Layout</code> sehingga berlaku di semua halaman.</td></tr>
+<tr><td>Pesan setelah terkunci bersifat umum</td><td>&ldquo;Sesi berakhir. Silakan login kembali.&rdquo; <b>Jangan</b> menyebut durasi atau alasannya.</td></tr>
+<tr><td>Semua <code class="inl">toLocaleString</code> diberi <code class="inl">timeZone: 'Asia/Jakarta'</code></td><td>Tanpa itu, waktu ikut zona PC kasir &mdash; PC berzona UTC akan menampilkan semua waktu 7 jam mundur.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="box warn"><span class="bt">Semua unduhan memakai header, bukan token di URL</span>
+<code class="inl">downloadAuth()</code> memakai <code class="inl">Authorization: Bearer</code>.
+Akibatnya berkas <b>tidak bisa</b> diunduh dengan <code class="inl">curl</code> yang menaruh
+token di query string &mdash; harus header, sama seperti endpoint lain.
+</div>
+
+<h3>Daftar halaman dan rute</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Rute</th><th>Halaman</th><th>Peran</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td><em>(tanpa rute)</em></td><td>LoginPage</td><td><span class="tag t-pub">Publik</span></td><td>Login operator + daftar status PC real-time</td></tr>
+<tr><td><code class="inl">/</code></td><td>Dashboard</td><td><span class="tag t-any">ADMIN + KASIR</span></td><td>Kontrol harian: kartu PC, mulai/kunci/matikan, buat akun, topup</td></tr>
+<tr><td><code class="inl">/pcs</code></td><td>PC Management</td><td><span class="tag t-adm">ADMIN</span></td><td>Kelola PC + kelola auto-update</td></tr>
+<tr><td><code class="inl">/accounts</code></td><td>Voucher &amp; Member</td><td><span class="tag t-adm">ADMIN</span></td><td>Daftar &amp; kelola akun pelanggan</td></tr>
+<tr><td><code class="inl">/transactions</code></td><td>Transaksi</td><td><span class="tag t-adm">ADMIN</span></td><td>Riwayat + pembatalan transaksi</td></tr>
+<tr><td><code class="inl">/reports</code></td><td>Laporan</td><td><span class="tag t-adm">ADMIN</span></td><td>Rekap, grafik uptime, unduh PDF</td></tr>
+<tr><td><code class="inl">/settings</code></td><td>Pengaturan</td><td><span class="tag t-adm">ADMIN</span></td><td>7 tab konfigurasi</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Semua tombol &mdash; halaman Login</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th><th>Endpoint</th></tr></thead>
+<tbody>
+<tr><td>Mata (lihat sandi)</td><td>Menampilkan/menyembunyikan password</td><td>&mdash;</td></tr>
+<tr><td><b>LOGIN</b></td><td>Masuk sebagai operator</td><td><code class="inl">POST /auth/login</code></td></tr>
+</tbody>
+</table>
+</div>
+<p class="small muted">
+Kolom kiri menampilkan daftar PC beserta warna status: <b>hijau berdenyut</b> = sedang dipakai,
+<b>kuning</b> = tersedia, <b>merah diam</b> = offline. Hanya hijau yang berdenyut.
+Datanya diambil lewat <code class="inl">GET /pcs/ringkas</code> (publik) setiap 10 detik
+&mdash; WebSocket tidak bisa dipakai karena halaman ini belum punya JWT.
+</p>
+
+<h3>Semua tombol &mdash; halaman Dashboard</h3>
+<div class="box info"><span class="bt">Panel Input Cepat</span>
+Untuk membuat voucher/member, topup, dan tarik <b>tanpa</b> harus pilih PC dulu.
+</div>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td>TOPUP</td><td>Tambah waktu ke akun terpilih. Butuh akun dipilih lebih dulu.</td></tr>
+<tr><td>TARIK</td><td>Kurangi waktu (koreksi). Butuh akun terpilih lebih dulu.</td></tr>
+<tr><td>VOUCHER BARU</td><td>Buka dialog buat voucher.</td></tr>
+<tr><td>MEMBER BARU</td><td>Buka dialog buat member.</td></tr>
+<tr><td>Rp 1.000&ndash;5.000</td><td>Nominal cepat &rarr; langsung ke konfirmasi.</td></tr>
+<tr><td>Nominal Lain</td><td>Ketik nominal bebas (kelipatan 500, min 500).</td></tr>
+<tr><td>Ganti Akun</td><td>Batal pilihan dan kosongkan panel.</td></tr>
+<tr><td>Ya, Lanjutkan</td><td>Konfirmasi topup/tarik &rarr; simpan ke server.</td></tr>
+<tr><td>Batal / X</td><td>Tutup dialog.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="box info"><span class="bt">Tombol di setiap kartu PC</span>
+Hanya <b>dua</b> tombol yang muncul (bukan tiga), supaya tidak ada tombol Start pada
+PC yang sedang berjalan &mdash; server pasti menolaknya dengan &ldquo;PC sudah memiliki
+sesi berjalan&rdquo;.
+</div>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Muncul saat</th><th>Fungsi</th><th>Endpoint</th></tr></thead>
+<tbody>
+<tr><td><b>MULAI</b></td><td>PC tidak dipakai</td><td>Buka dialog Start: pakai kode member/voucher, atau buat voucher baru lalu langsung jalan</td><td>WS <code class="inl">dashboard:start_pc</code> / <code class="inl">start_voucher</code></td></tr>
+<tr><td><b>KUNCI</b></td><td>Sesi berjalan</td><td>Konfirmasi &rarr; kunci layar PC</td><td>WS <code class="inl">dashboard:lock_pc</code></td></tr>
+<tr><td><b>TOPUP</b></td><td>Sesi berjalan</td><td>Tambah waktu ke akun yang sedang dipakai, tanpa interruptsesi</td><td><code class="inl">POST /accounts/:id/topup</code></td></tr>
+<tr><td><b>MATI</b></td><td>Selalu</td><td>Matikan PC. Menolak saat ada sesi berjalan.</td><td>WS <code class="inl">dashboard:shutdown_pc</code></td></tr>
+</tbody>
+</table>
+</div>
+<p class="small muted">
+Angka hitung mundur di kartu PC obey dua jenis: <b>SISA WAKTU</b> (waktu sesi pelanggan)
+dan <b>SHUTDOWN DALAM</b> (sampai PC dimatikan otomatis). Untuk PC offline, angka
+shutdown <b>beku di 00:00</b> karena server memang tidak akan pernah mengirim
+perintah ke PC yang tidak tersambung &mdash; bergerak residence itu hanya informasi
+palsu.
+</p>
+
+<h3>Semua tombol &mdash; halaman PC Management</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol / kontrol</th><th>Fungsi</th><th>Endpoint</th></tr></thead>
+<tbody>
+<tr><td><b>+ Tambah PC</b></td><td>Buat PC baru. Hasilnya menampilkan <b>PC ID</b> dan <b>Agent Token</b> &mdash; keduanya wajib diisi saat instalasi MSI.</td><td><code class="inl">POST /pcs</code></td></tr>
+<tr><td>Salin agentToken</td><td>Salin ke clipboard. Punya fallback <code class="inl">execCommand</code> karena clipboard API tidak jalan di HTTP biasa.</td><td>&mdash;</td></tr>
+<tr><td>Salin PC ID</td><td>Salin UUID PC.</td><td>&mdash;</td></tr>
+<tr><td>Salin RustDesk ID</td><td>Salin ID RustDesk untuk perbaikan jarak jauh.</td><td>&mdash;</td></tr>
+<tr><td>Pencil (ganti nama)</td><td>Ubah label PC. Aman dipakai saat PC sedang dipakai.</td><td><code class="inl">PATCH /pcs/:id/nama</code></td></tr>
+<tr><td>Kolom Daya (watt)</td><td>Set daya PC untuk hitungan listrik. Bawaan 150 W.</td><td><code class="inl">PATCH /pcs/:id/watt</code></td></tr>
+<tr><td>Checkbox baris</td><td>Pilih PC untuk auto-update.</td><td>&mdash;</td></tr>
+<tr><td><b>Perbarui N PC</b></td><td>Nyalakan auto-update untuk PC yang dipilih.</td><td><code class="inl">PATCH /pcs/auto-update</code></td></tr>
+<tr><td>Batalkan pembaruan</td><td>Matikan auto-update untuk PC yang sedang ditandai.</td><td><code class="inl">PATCH /pcs/auto-update</code></td></tr>
+<tr><td><code class="inl">&#8942;</code> menu &rarr; <b>Tandai rusak</b></td><td>Tandai sedang diservis: hentikan sesi, kunci layar, sembunyikan dari dashboard/login/mobile.</td><td><code class="inl">PATCH /pcs/:id/rusak</code></td></tr>
+<tr><td>menu &rarr; <b>Buka kunci</b></td><td>Paksa kunci layar PC yang sedang berjalan. Sesi aktif ikut dihentikan.</td><td><code class="inl">POST /pcs/:id/unlock</code></td></tr>
+<tr><td>menu &rarr; <b>Hapus PC</b></td><td>Hapus PC permanen. <b>Ditolak 409</b> kalau ditandai rusak, dan 400 kalau ada sesi berjalan.</td><td><code class="inl">DELETE /pcs/:id</code></td></tr>
+</tbody>
+</table>
+</div>
+<div class="box warn"><span class="bt">Urutan saat menandai rusak itu penting</span>
+Sesi dihentikan &rarr; layar dikunci &rarr; flag ditulis &rarr; broadcast. Kalau flag ditulis
+lebih dulu, ada celah PC sudah hilang dari dashboard tapi sesinya masih jalan, jadi kasir
+tidak pernah melihat sesi itu.
+</div>
+
+<h3>Semua tombol &mdash; halaman Voucher &amp; Member</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th><th>Endpoint</th></tr></thead>
+<tbody>
+<tr><td>Tab Voucher / Member</td><td>Ganti daftar yang tampil.</td><td><code class="inl">GET /accounts?tipe=...</code></td></tr>
+<tr><td>+ Buat Voucher / Member</td><td>Buat akun baru. Password awal <code class="inl">0000</code>.</td><td><code class="inl">POST /accounts/voucher</code> atau <code class="inl">/member</code></td></tr>
+<tr><td>Topup</td><td>Tambah waktu ke semua akun terpilih.</td><td><code class="inl">POST /accounts/:id/topup</code></td></tr>
+<tr><td>Tarik</td><td>Kurangi waktu (koreksi).</td><td><code class="inl">POST /accounts/:id/koreksi</code></td></tr>
+<tr><td>Password</td><td>Ganti password. <b>Hanya</b> kalau tepat satu akun dipilih.</td><td><code class="inl">PATCH /accounts/:id/password</code></td></tr>
+<tr><td>Nonaktifkan</td><td>Set status jadi REVOKED. <b>Sesi yang sedang berjalan langsung dihentikan.</b></td><td><code class="inl">POST /accounts/:id/revoke</code></td></tr>
+<tr><td>Batal pilih</td><td>Kosongkan seleksi.</td><td>&mdash;</td></tr>
+<tr><td>Checkbox / header</td><td>Pilih satu atau semua akun di halaman ini.</td><td>&mdash;</td></tr>
+<tr><td>Bersihkan</td><td>Kosongkan pencarian.</td><td>&mdash;</td></tr>
+</tbody>
+</table>
+</div>
+<div class="box bad"><span class="bt">Menonaktifkan akun langsung menghentikan sesinya</span>
+Dulu <code class="inl">revoke()</code> hanya menulis status <code class="inl">REVOKED</code>
+tanpa menyentuh sesi &mdash; sehingga kasir menonaktifkan member tapi PC-nya tetap jalan
+sampai waktu habis. Sekarang <code class="inl">stopSessionsOfAccount()</code> dipanggil
+langsung, dan tick 1-detiknya juga memeriksa status akun sebagai pengaman kedua.
+Sisa waktu yang sudah dibayar <b>dikembalikan</b>, karena akunnya dinonaktifkan bukan dibuang.
+</div>
+
+<h3>Semua tombol &mdash; halaman Transaksi</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td>Dari / Sampai</td><td>Filter rentang tanggal.</td></tr>
+<tr><td><b>Filter</b></td><td>Terapkan filter (tidak langsung, harus ditekan).</td></tr>
+<tr><td><b>Reset</b></td><td>Kosongkan filter dan muat ulang.</td></tr>
+<tr><td><b>Batal</b> (per baris)</td><td>Batalkan transaksi. <b>Hanya</b> transaksi terakhir dan <b>maks 10 menit</b> setelahnya.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Semua tombol &mdash; halaman Laporan</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td>Dari / Sampai</td><td>Filter rentang. Bawaan 6 hari lalu sampai hari ini.</td></tr>
+<tr><td><b>Tampilkan</b></td><td>Muat ulang seluruh data sesuai rentang.</td></tr>
+<tr><td><b>Download PDF</b></td><td>Unduh laporan uptime + listrik sebagai PDF.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Semua tombol &mdash; halaman Pengaturan (7 tab)</h3>
+<div class="grid g2">
+<div class="card">
+<h4>Tab Tarif</h4>
+<ul>
+<li><b>Simpan Tarif</b> &rarr; <code class="inl">harga_per_menit</code></li>
+<li><b>Simpan Grace Period</b> &rarr; <code class="inl">grace_period_detik</code></li>
+<li><b>Simpan Auto-Matikan</b> &rarr; <code class="inl">auto_shutdown_menit</code> (0 = mati)</li>
+</ul>
+</div>
+<div class="card">
+<h4>Tab Agent &amp; Keamanan</h4>
+<ul>
+<li><b>Simpan PIN</b> &rarr; PIN uninstall</li>
+<li><b>Simpan / Matikan akses</b> &rarr; sakelar teknisi</li>
+<li><b>Hapus</b> &rarr; hapus akun teknisi (PC-nya dikunci dulu)</li>
+<li><b>Simpan PIN Bypass</b> / <b>Hapus PIN Bypass</b></li>
+<li><b>Simpan &amp; Kirim</b> &rarr; konfigurasi Nextcloud</li>
+<li><b>Simpan &amp; Kirim</b> &rarr; token bot Telegram</li>
+<li>Checkbox <b>Cegah PC tidur &amp; layar mati</b></li>
+</ul>
+</div>
+<div class="card">
+<h4>Tab Instalasi</h4>
+<ul>
+<li><b>Upload</b> &rarr; MSI agent (maks 200 MB)</li>
+<li><b>Unduh Installer</b></li>
+<li><b>Download APK</b> &rarr; aplikasi Android</li>
+<li><b>Upload Wallpaper</b> &rarr; latar layar kunci (maks 10 MB)</li>
+<li><b>Dokumentasi Update</b> &rarr; buka dokumen ini</li>
+</ul>
+</div>
+<div class="card">
+<h4>Tab Pengguna</h4>
+<ul>
+<li><b>Tambah User</b> &rarr; operator baru (role Kasir/Admin)</li>
+<li><b>X</b> per baris &rarr; hapus operator</li>
+<li><b>Ganti Kata Sandi</b> &rarr; sandi sendiri</li>
+</ul>
+</div>
+<div class="card">
+<h4>Tab Data</h4>
+<ul>
+<li><b>Buat Backup Sekarang</b> &rarr; <code class="inl">pg_dump</code></li>
+<li><b>Download</b> per baris &rarr; unduh backup</li>
+<li><b>Simpan Penerima</b> &rarr; email laporan tutup hari</li>
+<li><b>Simpan &amp; Kirim Sekarang</b> &rarr; simpan dulu, baru kirim</li>
+</ul>
+</div>
+<div class="card">
+<h4>Tab Log Billing</h4>
+<ul>
+<li>Pilih <b>tanggal</b></li>
+<li><b>Cari isi log</b></li>
+<li><b>Unduh .txt</b></li>
+<li>Tombol tanggal di daftar kiri</li>
+<li>Pagination Log Aktivitas</li>
+</ul>
+</div>
+<div class="card">
+<h4>Tab Diagnosa Agent</h4>
+<ul>
+<li><b>Muat ulang</b></li>
+<li><b>Download</b> per berkas diagnosa</li>
+</ul>
+</div>
+</div>
+
+<div class="box warn"><span class="bt">Nilai setting milik INDUK, bukan state lokal tab</span>
+Dulu tab Tarif punya <code class="inl">useState('')</code> sendiri sehingga form tampil
+kosong padahal server sudah punya nilai. Sekali tersimpan kosong,
+<code class="inl">harga_per_menit</code> jadi string kosong &rarr;
+<code class="inl">parseInt('')</code> = <code class="inl">NaN</code> &rarr; proses
+Node crash &rarr; <b>seluruh PC kehilangan billing</b>. Aturannya: kalau nilai awal
+berasal dari server, jangan mendeklarasikannya ulang di tab.
+</div>
+
+<h3>Catatan tampilan responsif</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Lebar</th><th>Yang berubah</th></tr></thead>
+<tbody>
+<tr><td>&lt; 400px, &lt; 480px</td><td>Penyesuaian kecil di <code class="inl">index.css</code></td></tr>
+<tr><td>&lt; 640px (<code class="inl">sm</code>)</td><td>Jam Digital ringkas; tabel backup &amp; diagnosa jadi kartu bertumpuk</td></tr>
+<tr><td>&lt; 720px</td><td>Layout login satu kolom, form di atas daftar PC</td></tr>
+<tr><td>&lt; 1024px (<code class="inl">lg</code>)</td><td>Sidebar Pengaturan jadi pemicu yang menutup sendiri; tabel Log Aktivitas jadi kartu; navigasi jadi ikon saja</td></tr>
+<tr><td>&ge; 1024px</td><td>Navigasi tampil label penuh; sidebar Pengaturan terlihat</td></tr>
+<tr><td><code class="inl">prefers-reduced-motion</code></td><td>Semua animasi dimatikan, termasuk denyut status AKTIF</td></tr>
+</tbody>
+</table>
+</div>
+<div class="box info"><span class="bt">Latar belakang tidak bisa pakai <code class="inl">url()</code> di CSS</span>
+Di kombinasi Tailwind v4 + Vite 8, satu deklarasi <code class="inl">url(...)</code>
+apa pun di <code class="inl">index.css</code> membuat build gagal. Karena itu latar
+dibuat sebagai komponen React <code class="inl">LatarBelakang.tsx</code>:
+<code class="inl">&lt;img&gt;</code> + <code class="inl">object-cover</code> +
+lapisan putih. Yang aman di CSS hanya <code class="inl">background-color</code> dan
+<code class="inl">linear-gradient</code>.
+</div>
+
+<h2 id="backend">2. Backend &mdash; API dan Otak Sistem</h2>
+
+<h3>Teknologi yang dipakai</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Hal</th><th>Nilai</th></tr></thead>
+<tbody>
+<tr><td>Bahasa</td><td>TypeScript (ES2023, <code class="inl">strict: true</code>)</td></tr>
+<tr><td>Framework</td><td>NestJS 12</td></tr>
+<tr><td>Sistem modul</td><td><b>ESM</b> (<code class="inl">"type": "module"</code>, <code class="inl">moduleResolution: nodenext</code>)</td></tr>
+<tr><td>ORM</td><td>Prisma 5.22 (<b>wajib dipin</b>)</td></tr>
+<tr><td>Database</td><td>PostgreSQL 15</td></tr>
+<tr><td>Realtime</td><td>Socket.IO 4.8, namespace <code class="inl">/session</code></td></tr>
+<tr><td>Auth</td><td>JWT (24 jam) + passport-jwt + bcrypt</td></tr>
+<tr><td>Validasi</td><td>class-validator + class-transformer (global <code class="inl">ValidationPipe</code>)</td></tr>
+<tr><td>Cron</td><td>@nestjs/schedule</td></tr>
+<tr><td>PDF</td><td>pdfkit</td></tr>
+<tr><td>Email</td><td>nodemailer</td></tr>
+<tr><td>Parsing APK</td><td>app-info-parser</td></tr>
+<tr><td>Test</td><td>Vitest 4 &mdash; 244 kasus, 20 berkas</td></tr>
+<tr><td>Base image</td><td>node:20 + postgresql-client (untuk <code class="inl">pg_dump</code>)</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="box bad"><span class="bt">Dua aturan yang kalau dilanggar menjatuhkan seluruh server</span>
+<ol style="margin:4px 0 0">
+<li><b>Semua import antar file wajib ber ekstensi <code class="inl">.js</code></b> &mdash;
+contoh <code class="inl">'./pc.service.js'</code>. Karena project ini ESM + nodenext.
+Jangan diubah ke Node16/CommonJS.</li>
+<li><b>Jangan jalankan <code class="inl">npx nest build</code> manual saat watcher jalan.</b>
+<code class="inl">nest-cli.json</code> punya <code class="inl">deleteOutDir: true</code>,
+jadi tiap build menghapus seluruh <code class="inl">dist</code>. Kalau proses Nest kebaca
+modul saat <code class="inl">dist</code> belum lengkap &rarr; <code class="inl">ERR_MODULE_NOT_FOUND</code>
+&rarr; proses mati &rarr; <b>tidak ada satu PC pun yang bisa billing</b>.
+Cara memicu compile yang aman: sentuh <code class="inl">src/app.module.ts</code>, atau
+<code class="inl">docker compose restart v3netbill-backend</code> sebagai jalan terakhir.</li>
+</ol>
+</div>
+
+<h3>Struktur folder</h3>
+<div class="codehead">src/<span></span></div>
+<pre><code>src/
+  main.ts                prefix global /api, ValidationPipe, CORS, static
+  app.module.ts          semua modul + guard/filter global
+  common/                guard, decorator, filter, wib-date.ts
+  prisma/                PrismaModule (global) + PrismaService
+  auth/                  login JWT, kelola user operator
+  pc/                    CRUD PC, auto-update, watt, status hitung
+  accounts/              voucher/member, topup, koreksi, void, password, revoke
+  transactions/          riwayat transaksi
+  session/               INTI SISTEM: gateway + service + teknisi
+  reports/               rekap harian &amp; rentang, uptime
+  laporan/               PDF tutup hari + email + Telegram
+  settings/              tarif, upload, backup, PIN, power config, agent update
+  uptime/                sampler 60 detik + agregasi
+  teknisi/               akun teknisi
+  activity-log/          jejak aktivitas
+  notifikasi/            token FCM + push
+  log-billing/           log harian sebagai berkas teks
+  diagnosa/              paket log agent
+  dokumentasi/           (baru) dokumen ini</code></pre>
+
+<h3>Cara build dan menjalankan</h3>
+<div class="codehead">Perintah<span></span></div>
+<pre><code>docker compose exec v3netbill-backend npm run build
+docker compose exec v3netbill-backend npm test        # 244 kasus
+docker compose exec v3netbill-backend npm run lint
+docker compose exec v3netbill-backend npx prisma generate
+docker compose exec v3netbill-backend npx prisma migrate dev --name &lt;nama&gt;
+docker compose logs -f v3netbill-backend</code></pre>
+
+<div class="box bad"><span class="bt">Vitest hijau tidak berarti bisa dikompilasi</span>
+Vitest memakai esbuild yang hanya <b>membuang tipe</b>. Jenis error seperti
+<code class="inl">Property 'x' does not exist</code> lolos semua test dan baru
+ditolak <code class="inl">nest build</code>. Karena watcher Nest <b>menunggu</b> hasil
+compile, satu error berarti server tidak start sama sekali.
+<br><b>Aturan:</b> setelah edit TypeScript, selalu lihat baris
+&ldquo;Found N errors&rdquo; dari watcher &mdash; bukan hanya &ldquo;Tests N passed&rdquo;.
+</div>
+
+<h3>Aturan global</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Aturan</th><th>Nilai</th></tr></thead>
+<tbody>
+<tr><td>Prefix global</td><td><code class="inl">/api</code> &mdash; semua path REST diawali prefix ini.</td></tr>
+<tr><td>Guard 1 (global)</td><td><code class="inl">JwtAuthGuard</code> &mdash; <b>bypass</b> untuk context <code class="inl">ws</code>, jadi agent tidak butuh JWT.</td></tr>
+<tr><td>Guard 2 (global)</td><td><code class="inl">RolesGuard</code> &mdash; juga bypass <code class="inl">ws</code>.</td></tr>
+<tr><td>Filter (global)</td><td><code class="inl">HttpExceptionFilter</code> &mdash; hanya menangani context http.</td></tr>
+<tr><td>ValidationPipe</td><td><code class="inl">{transform: true, whitelist: true}</code> &mdash; field tak dikenal di body <b>dibuang</b>, bukan ditolak.</td></tr>
+<tr><td>Umur JWT</td><td>24 jam</td></tr>
+<tr><td>Batas hari buku</td><td><b>23:30 WIB</b> &mdash; hari T = [23:30 T-1, 23:30 T)</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Model autentikasi</h3>
+<div class="box info"><span class="bt">Ada DUA identitas yang berbeda</span>
+<b>Operator</b> (admin/kasir) memakai JWT. <b>PC</b> memakai pasangan
+<code class="inl">pcId</code> + <code class="inl">agentToken</code> &mdash; <b>bukan</b> JWT.
+Jadi menebak token agent berarti bisa mengganti password akun orang dan menghentikan
+sesi. Endpoint publik yang menerima <code class="inl">agentToken</code> wajib membalas
+<b>401</b> kalau token salah &mdash; jangan membalas &ldquo;tidak ada pembaruan&rdquo;,
+karena perbedaan balasannya bisa dipakai memetakan token mana yang berlaku.
+</div>
+
+<h4>Endpoint publik dan alasannya</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Endpoint</th><th>Kenapa publik</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">POST /auth/login</code></td><td>Pintu masuk.</td></tr>
+<tr><td><code class="inl">GET /pcs/ringkas</code></td><td>Halaman login tampil <b>sebelum</b> operator login. Hanya mengirim 4 field: <code class="inl">namaPc, status, tipe, sisaDetik</code>. <b>Jangan pernah diganti <code class="inl">GET /pcs</code></b> &mdash; yang itu membawa <code class="inl">agentToken</code>.</td></tr>
+<tr><td><code class="inl">GET /settings/wallpaper</code></td><td>Agent ambil wallpaper tanpa JWT.</td></tr>
+<tr><td><code class="inl">POST /settings/verify-pin</code></td><td>Dipakai skrip uninstall &amp; dialog uninstall yang tidak punya JWT.</td></tr>
+<tr><td><code class="inl">POST /settings/agent/cek-pembaruan</code></td><td>Agent adalah Windows Service, tidak punya akun operator.</td></tr>
+<tr><td><code class="inl">POST /settings/agent/unduh-installer</code></td><td>Sama seperti di atas.</td></tr>
+<tr><td><code class="inl">POST /diagnosa</code></td><td>Agent mengunggah paket lognya sendiri. Membaca hasil unduhan tetap ADMIN.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Logika bisnis inti</h3>
+
+<h4>Siklus hidup sesi</h4>
+<div class="codehead">Tiga cara memulai sesi &mdash; semuanya lewat satu fungsi<span></span></div>
+<pre><code>client:login_request      (pelanggan di layar PC)
+dashboard:start_pc        (kasir tekan MULAI)
+dashboard:start_voucher   (kasir buat voucher + langsung jalan)
+             |
+             v
+   createSessionAndStart(pcId, account)     &lt;- SATU titik penjaga
+
+ therein. Urutannya bermakna:
+1. PC tidak ditemukan            -&gt; tolak
+2. pc.rusak                     -&gt; tolak   (WAJIB di atas lastUsedAt)
+3. pc.autoUpdate aktif          -&gt; tolak   (sedang di-patch)
+4. PC sudah punya sesi berjalan -&gt; tolak
+5. Akun dipakai di PC lain       -&gt; tolak
+6. baru: buat Session, tulis lastUsedAt, set status ACTIVE, mulai tick</code></pre>
+
+<div class="box warn"><span class="bt">Semua penjaga harus di satu fungsi</span>
+Kalau pengecekan <code class="inl">pc.rusak</code> atau <code class="inl">autoUpdate</code>
+ditegakkan di tiap pemanggil, pasti ada jalur yang lupa. Yang kedua tidak bisa dicegah
+dari frontend sama sekali &mdash; pelanggan mengetik langsung di layar PC.
+</div>
+
+<h4>Perhitungan sisa waktu</h4>
+<div class="codehead">Satu rumus, tiga pemakai<span></span></div>
+<pre><code>sisaWaktuSekarang(waktuMulai, saldoDetik) =
+  max(0, saldoDetik - floor((sekarang - waktuMulai) / 1000))
+
+Dipakai oleh: tick 1 detik, getSessionStatus(), dan kirimUlangSesiKeAgent()</code></pre>
+<p class="small muted">
+Server adalah sumber kebenaran. Penghitung di memori hanya pengirim tampilan;
+bila server restart, waktu tetap dihitung ulang dari <code class="inl">Session.waktuMulai</code>,
+jadi tidak ada detik yang hilang.
+</p>
+
+<h4>Alasan sesi berhenti &amp; dampaknya ke saldo</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Alasan</th><th>Kapan terjadi</th><th>Efek ke saldo</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">habis</code></td><td>Sisa waktu mencapai nol</td><td><b>Set ke 0</b>. Voucher tidak bisa dipakai ulang.</td></tr>
+<tr><td><code class="inl">manual</code></td><td>Kasir menekan Kunci, atau PC ditandai rusak</td><td>Sisa dikembalikan</td></tr>
+<tr><td><code class="inl">disconnect_timeout</code></td><td>Koneksi agent terputus</td><td>Sisa dikembalikan</td></tr>
+<tr><td><code class="inl">akun_nonaktif</code></td><td>Akun dinonaktifkan kasir</td><td>Sisa dikembalikan</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Aturan nominal</h4>
+<ul>
+<li>Nominal wajib <b>kelipatan 500</b> dan minimal <b>500</b>.</li>
+<li>Kode voucher = 6 angka acak, dicek unik (maks 10 percobaan).</li>
+<li>Password awal <b>semua akun baru = <code class="inl">0000</code></b> (sudah tidak acak lagi).</li>
+<li>Voucher kedaluwarsa kalau &gt;30 hari tidak dipakai.</li>
+<li>Nama member 4&ndash;40 karakter dan <b>itu kredensial login</b>.</li>
+<li>Pembatalan transaksi: hanya transaksi terakhir, maks 10 menit.</li>
+<li>Satu akun hanya boleh punya <b>satu</b> sesi berjalan di seluruh warnet.</li>
+</ul>
+
+<h4>Auto-matikan PC setelah menganggur</h4>
+<p>
+Setiap 10 detik backend memeriksa PC yang idle. Pengamannya, <b>urutannya wajib</b>:
+</p>
+<div class="codehead">Urutan pengaman (jangan diubah)<span></span></div>
+<pre><code>setting 0                -&gt; lewati
+rusak = true             -&gt; lewati
+autoUpdate aktif         -&gt; lewati
+ada Session BERJALAN     -&gt; lewati   &lt;- PC pelanggan tidak boleh mati
+ada sesi TEKNISI         -&gt; lewati
+agent tidak tersambung   -&gt; lewati, timer TIDAK disenapkan
+kirim admin:shutdown, catat log, set terakhirAktifAt = null</code></pre>
+<div class="box bad"><span class="bt">Kalau agent offline, timer HARUS dibiarkan menyala</span>
+Kalau tetap diset <code class="inl">null</code> karena &ldquo;sudah dikirim&rdquo;, PC itu
+menggantung menyala <b>selamanya</b> &mdash; tidak ada perintah kedua yang akan dikirim.
+</div>
+
+<h4>Status PC: sumber kebenaran bukan kolom database</h4>
+<div class="codehead">statusPcDitampilkan()<span></span></div>
+<pre><code>heartbeat basi (&gt; 30 detik, atau null)  -&gt; OFFLINE
+heartbeat segar + ada sesi berjalan      -&gt; ACTIVE
+selain itu                                -&gt; nilai kolom
+
+AMBANG_OFFLINE_MS = 30_000   (heartbeat agent tiap 15 detik)</code></pre>
+<div class="box warn"><span class="bt">Kolom <code class="inl">Pc.status</code> adalah cache</span>
+Kolom itu boleh berisi <code class="inl">OFFLINE</code> di database &mdash; itu normal,
+bukan data rusak. Sumber kebenaran hanya dua: <code class="inl">lastHeartbeatAt</code>
+dan <code class="inl">Session</code> berstatus <code class="inl">BERJALAN</code>.
+</div>
+
+<h3>Background job (cron)</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Nama</th><th>Waktu</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">auto-backup</code></td><td>01:00 WIB</td><td><code class="inl">pg_dump</code> + hapus backup &gt; 30 hari</td></tr>
+<tr><td><code class="inl">cleanup-activity-logs</code></td><td>02:00 WIB</td><td>Hapus activity log &gt; 30 hari</td></tr>
+<tr><td><code class="inl">cleanup-log-billing</code></td><td>03:00 WIB</td><td>Hapus berkas log &gt; 30 hari</td></tr>
+<tr><td><code class="inl">cleanup-diagnosa</code></td><td>04:00 WIB</td><td>Hapus paket diagnosa &gt; 14 hari</td></tr>
+<tr><td><code class="inl">tutup-hari-laporan</code></td><td>23:30 WIB</td><td>Rekap hari sebelumnya &rarr; PDF + email + Telegram</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="box bad"><span class="bt">Semua yang dipanggil dari cron / setInterval wajib <code class="inl">try/catch</code></span>
+Aturan ini sudah tercatat sejak awal, tapi <b>tidak pernah diterapkan di semua tempat</b>
+&mdash; dan itu terbukti lewat dua crash produksi, bukan lewat analisis kode. Satu setting
+rusak pernah menjatuhkan <b>seluruh proses Node</b>, artinya tidak ada satu PC pun yang
+bisa billing.
+</div>
+
+<h3>Variabel lingkungan (.env)</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Variabel</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">DATABASE_URL</code></td><td>Koneksi PostgreSQL</td></tr>
+<tr><td><code class="inl">JWT_SECRET</code></td><td>Kunci tanda tangan JWT. <b>Jangan kosongkan.</b></td></tr>
+<tr><td><code class="inl">PORT</code></td><td>Port backend, bawaan 3000</td></tr>
+<tr><td><code class="inl">LOG_BILLING_DIR</code></td><td>Folder log billing, bawaan <code class="inl">/data/logs</code></td></tr>
+<tr><td><code class="inl">SMTP_*</code></td><td>Konfigurasi email laporan</td></tr>
+<tr><td><code class="inl">LAPORAN_EMAIL_TUJUAN</code></td><td>Penerima cadangan laporan</td></tr>
+<tr><td><code class="inl">TELEGRAM_BOT_TOKEN</code>, <code class="inl">TELEGRAM_CHAT_ID</code></td><td>Telegram laporan</td></tr>
+<tr><td><code class="inl">FCM_PROJECT_ID</code>, <code class="inl">FCM_CLIENT_EMAIL</code>, <code class="inl">FCM_PRIVATE_KEY</code></td><td>Push notifikasi. Kalau kosong, backend tetap jalan normal &mdash; pengiriman jadi no-op yang dilog sekali.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h2 id="mobile">3. Mobile &mdash; Aplikasi Android</h2>
+
+<h3>Teknologi yang dipakai</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Hal</th><th>Nilai</th></tr></thead>
+<tbody>
+<tr><td>Bahasa</td><td>Dart (SDK &ge; 3.3.0, &lt; 4.0.0)</td></tr>
+<tr><td>Framework</td><td>Flutter 3.44.4 (stable)</td></tr>
+<tr><td>State management</td><td><b>provider</b> (ChangeNotifier) &mdash; dipilih sederhana, bukan Riverpod</td></tr>
+<tr><td>Navigasi</td><td><b>Tanpa paket routing</b>: <code class="inl">IndexedStack</code> + <code class="inl">NavigationBar</code></td></tr>
+<tr><td>HTTP</td><td>dio 5.11</td></tr>
+<tr><td>Realtime</td><td>socket_io_client 2.0</td></tr>
+<tr><td>Simpanan aman</td><td>flutter_secure_storage 9.2 (EncryptedSharedPreferences)</td></tr>
+<tr><td>Push</td><td>firebase_core + firebase_messaging</td></tr>
+<tr><td>Lain</td><td>intl 0.19, package_info_plus 9.0, path_provider, crypto</td></tr>
+<tr><td>Package ID</td><td><code class="inl">com.v3netbill.v3netbill_mobile</code></td></tr>
+<tr><td>Platform</td><td><b>Android saja</b></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Cara build dan menguji</h3>
+<p class="small">
+Tidak ada Flutter di host. Semua perintah lewat dua skrip di root project
+(<code class="inl">fl</code> untuk Flutter, <code class="inl">dk</code> untuk Dart),
+yang keduanya menjalankan <code class="inl">docker run</code>.
+</p>
+<div class="codehead">Skrip pembantu<span></span></div>
+<pre><code>cd /home/warnet/docker/v3netbill
+
+./fl analyze            # analisis statis
+./fl test               # 96 kasus di 14 berkas
+./fl build apk --release \
+  --dart-define=API_BASE_URL=https://v3netbill.bilmary.my.id/api \
+  --dart-define=API_WS_URL=wss://v3netbill.bilmary.my.id/session
+
+./dk format lib test    # format Dart (hanya file yang diubah!)</code></pre>
+
+<div class="box bad"><span class="bt">Dua hal yang mudah sekali salah di build mobile</span>
+<ol style="margin:4px 0 0">
+<li><b><code class="inl">--dart-define</code> dua-duanya wajib.</b> Kalau dilewatkan,
+build memakai default yang kebetulan sama dengan produksi &mdash; jadi build yang
+salahnya terlihat &ldquo;berhasil&rdquo;.</li>
+<li><b>Rilis selalu dari artifact CI, bukan dari build lokal.</b> Build lokal selalu
+bernomor <code class="inl">versionCode 1</code>. Mengunggah APK lokal ke server akan
+<b>menurunkan</b> versi untuk semua HP kasir, dan seluruh HP akan berhenti menampilkan
+pembaruan.</li>
+</ol>
+</div>
+
+<h3>Konfigurasi Android</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Hal</th><th>Nilai</th></tr></thead>
+<tbody>
+<tr><td>minSdk / targetSdk</td><td>24 / 36</td></tr>
+<tr><td>Java / Kotlin</td><td>VERSION_17 / JVM_17</td></tr>
+<tr><td>Gradle</td><td>9.1.0, AGP 9.0.1</td></tr>
+<tr><td>Permission</td><td><code class="inl">INTERNET</code>, <code class="inl">REQUEST_INSTALL_PACKAGES</code></td></tr>
+<tr><td>Signing</td><td>Keystore <code class="inl">android/app/v3netbill-release.jks</code> (tidak masuk repo) + <code class="inl">key.properties</code></td></tr>
+<tr><td>Minify / shrink</td><td><code class="inl">isMinifyEnabled = true</code>, <code class="inl">isShrinkResources = true</code></td></tr>
+<tr><td>FileProvider</td><td>Hanya <code class="inl">cache-path</code>, <code class="inl">external-cache-path</code>, <code class="inl">files-path</code>. <b>Tanpa</b> <code class="inl">root-path</code>.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="box warn"><span class="bt">Kalau <code class="inl">key.properties</code> hilang</span>
+Build <b>tidak</b> gagal &mdash; ia jatuh ke debug key. Hasilnya build hijau tapi
+tidak layak dibagikan (Android menandai &ldquo;tidak dari sumber tepercaya&rdquo;).
+</div>
+
+<h3>Tampilan aplikasi</h3>
+<p>Bottom navigation 3 tab: <b>Home</b>, <b>Voucher</b>, <b>Profile</b>.</p>
+
+<h4>Semua tombol &mdash; Login</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td>Mata</td><td>lihat / sembunyikan password</td></tr>
+<tr><td><b>Masuk</b></td><td>Login. Kolom username diisi otomatis dari sesi sebelumnya (password tidak pernah).</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Semua tombol &mdash; Home</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td>Perbarui sekarang</td><td>Unduh + pasang APK versi baru dari dalam aplikasi.</td></tr>
+<tr><td>Pasang</td><td>Pasang APK yang sudah diunduh sebelumnya (tidak unduh ulang).</td></tr>
+<tr><td>Muat ulang (ikon)</td><td>Cek versi lagi.</td></tr>
+<tr><td>Coba lagi</td><td>Ulangi pengecekan versi setelah gagal.</td></tr>
+<tr><td>Tarik ke bawah</td><td>Muat ulang daftar PC.</td></tr>
+<tr><td>Coba lagi (banner error)</td><td>Muat ulang daftar PC setelah gagal.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Semua tombol &mdash; kartu PC</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Muncul saat</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td><b>Mulai Sesi</b></td><td>PC tidak dipakai</td><td>Buka dialog: pakai kode, atau buat voucher/member baru lalu langsung jalan.</td></tr>
+<tr><td><b>Akhiri Sesi</b></td><td>Ada sesi</td><td>Konfirmasi &rarr; kunci PC.</td></tr>
+<tr><td><b>Matikan</b></td><td>Selalu</td><td>Konfirmasi &rarr; matikan PC.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="box info"><span class="bt">Field kode menerima kode voucher <b>dan</b> nama member</span>
+Keyboard harus berupa teks, bukan angka. Member tidak punya
+<code class="inl">kodeUnik</code> sama sekali &mdash; yang dipakai login adalah kolom
+<code class="inl">nama</code>. Dan <b>jangan</b> menambahkan
+<code class="inl">textCapitalization</code> di field ini, karena backend mencocokkan
+nama <b>tanpa</b> case-insensitive: mengubah huruf saat diketik berisiko membuat nama
+yang diketik berbeda dari yang tertulis di kartu.
+</div>
+
+<h4>Semua tombol &mdash; Voucher &amp; Member</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th><th>Syarat</th></tr></thead>
+<tbody>
+<tr><td>Muat ulang (ikon)</td><td>Muat ulang daftar akun</td><td>&mdash;</td></tr>
+<tr><td>Tab Voucher / Member</td><td>Ganti daftar</td><td>&mdash;</td></tr>
+<tr><td>Silang (X)</td><td>Kosongkan pencarian</td><td>&mdash;</td></tr>
+<tr><td>Buat Voucher / Member (FAB)</td><td>Buat akun baru</td><td>&mdash;</td></tr>
+<tr><td><b>Mulai di PC</b></td><td>Buka sheet pilihan PC, lalu mulai sesi</td><td>Tepat 1 akun dipilih, aktif, saldo &gt; 0</td></tr>
+<tr><td><b>Topup</b></td><td>Tambah waktu ke semua yang dipilih</td><td>Kelipatan 500</td></tr>
+<tr><td><b>Tarik</b></td><td>Kurangi waktu</td><td>Kelipatan 500</td></tr>
+<tr><td><b>Revoke</b></td><td>Nonaktifkan akun</td><td>&mdash;</td></tr>
+<tr><td><b>Password</b></td><td>Ganti password akun</td><td>Tepat 1 dipilih</td></tr>
+<tr><td><b>Batalkan pilihan</b></td><td>Kosongkan seleksi</td><td>&mdash;</td></tr>
+</tbody>
+</table>
+</div>
+<p class="small muted">
+Sheet pemilihan PC <b>hanya menawarkan PC status IDLE</b>. PC yang sedang dipakai pasti
+ditolak server, dan PC offline tidak punya layar untuk dikunci &mdash; menawarkan keduanya
+berarti kasir memilih lalu gagal.
+</p>
+
+<h4>Semua tombol &mdash; Profile</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th><th>Syarat</th></tr></thead>
+<tbody>
+<tr><td>Sakelar notifikasi</td><td>Nyalakan / matikan push saat pelanggan login</td><td><b>Hanya ADMIN</b></td></tr>
+<tr><td><b>Keluar</b></td><td>Konfirmasi &rarr; cabut token &rarr; hapus penyimpanan</td><td>&mdash;</td></tr>
+</tbody>
+</table>
+</div>
+<div class="box bad"><span class="bt">Urutan logout di mobile itu penting</span>
+<code class="inl">NotifikasiProvider.sebelumLogout()</code> harus jalan
+<b>sebelum</b> token dihapus, karena pencabutan token memakai JWT. Kalau dibalik,
+permintaan terkirim tanpa autentikasi dan token tertinggal di server.
+</div>
+
+<h3>Login HP tidak terputus tiap 24 jam</h3>
+<p>
+Token JWT backend berumur 24 jam. Sebelum ada perbaikan ini, tiap <code class="inl">401</code>
+langsung menghapus sesi &mdash; jadi kasir harus mengetik ulang username dan password
+<b>setiap hari</b> walaupun HP-nya tidak pernah disentuh.
+</p>
+<div class="codehead">Alur sekarang<span></span></div>
+<pre><code>401 + request membawa token
+  -&gt; _loginUlangOtomatis()   (pakai kredensial tersimpan)
+       berhasil  -&gt; ulang request ASLINYA tepat SEKALI
+       gagal     -&gt; clear + onUnauthorized() seperti semula</code></pre>
+<p class="small">Tiga penjaga yang wajib: (1) login ulang memakai
+<code class="inl">_dio.post</code> langsung, <b>bukan</b> <code class="inl">post()</code>
+&mdash; kalau lewat <code class="inl">post()</code> berarti lewat guard lagi dan
+<b>loop tanpa akhir</b>; (2) flag <code class="inl">sudahCobaLoginUlang</code> supaya
+request hanya diulang sekali; (3) flag <code class="inl">_sedangLoginUlang</code> supaya
+puluhan login ulang tidak berbarengan.</p>
+
+<div class="box warn"><span class="bt">Trade-off yang sengaja dipilih: password disimpan apa adanya</span>
+Supaya login ulang otomatis bisa jalan, password disimpan di
+<code class="inl">flutter_secure_storage</code>. Password itu <b>sah untuk login dari
+mana pun</b>, bukan hanya token yang bisa dicabut. Karena itu <b>logout wajib
+menghapusnya</b> &mdash; kalau tidak, siapa pun yang memakai HP itu setelah kasir logout
+masih punya akses. Alternatif yang lebih aman (perpanjang umur JWT di backend)
+ditawarkan, tapi user memilih opsi ini.
+</div>
+
+<h3>Pembaruan diri aplikasi</h3>
+<div class="codehead">Nomor versi punya dua ruang yang terpisah<span></span></div>
+<pre><code>CI     : versionCode = 1000 + github.run_number   (mis. 1014, 1024)
+lokal  : versionCode = 1  (selalu)
+
+Perbandingan: versionCode server &gt; versionCode milik sendiri
+Kalau nomor versi tidak terbaca -&gt; TIDAK menawarkan pembaruan (bukan menebak)</code></pre>
+<div class="codehead">Tahapan pembaruan<span></span></div>
+<pre><code>belumDicek -&gt; memeriksa -&gt; {tidakAda | tersedia}
+  -&gt; mengunduh -&gt; memasang
+  -&gt; {belumDicek | siapPasang | tersedia}
+
+Cek info : GET /settings/apk/info
+Unduh    : + timeout 15 menit (APK 55 MB)
+Verifikasi: panjang byte LALU sha256  (dua kali)
+Pasang   : MethodChannel -&gt; installer Android
+
+Empat hasil: diterima | dibatalkan | izin_ditolak | gagal</code></pre>
+<p class="small muted">
+Berkas ditulis <code class="inl">.part</code> lalu di-<code class="inl">rename</code>
+hanya setelah lolos verifikasi &mdash; jadi unduhan yang terpotong tidak pernah
+diserahkan ke installer. &ldquo;Dibatalkan&rdquo; itu <b>pilihan pengguna, bukan
+kegagalan</b>, jadi berkasnya sengaja disimpan supaya menekan &ldquo;Pasang&rdquo;
+lagi tidak mengunduh 55 MB dari nol.
+</p>
+
+<div class="box info"><span class="bt">Pengecekan versi hanya jalan SEKALI per sesi aplikasi</span>
+Kalau aplikasi tetap terbuka sejak sebelum APK baru diunggah, tombol pembaruan
+<b>tidak akan pernah muncul</b>. Solusinya sementara: tutup aplikasi sepenuhnya lalu
+buka lagi.
+</div>
+
+<h2 id="agent">4. Agent &mdash; Program di PC Kasir</h2>
+
+<h3>Teknologi yang dipakai</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Hal</th><th>Nilai</th></tr></thead>
+<tbody>
+<tr><td>Bahasa</td><td>C# (<code class="inl">LangVersion=latest</code>, nullable aktif)</td></tr>
+<tr><td>Runtime</td><td>.NET 8</td></tr>
+<tr><td>UI</td><td><b>WPF</b> (bukan WinForms, bukan MAUI)</td></tr>
+<tr><td>Realtime</td><td>Socket.IO client 4.0.5 (Engine.IO v4)</td></tr>
+<tr><td>JSON</td><td>System.Text.Json + Newtonsoft.Json 13.0.3</td></tr>
+<tr><td>Hashing</td><td>BCrypt.Net-Next 4.0.3</td></tr>
+<tr><td>Installer</td><td>WiX Toolset <b>4.0.5</b> (extension <code class="inl">WixToolset.UI</code>)</td></tr>
+<tr><td>Publish</td><td><code class="inl">--self-contained true</code>, single-file <b>false</b>, trimmed <b>false</b>, <code class="inl">win-x64</code></td></tr>
+<tr><td>CI</td><td>GitHub Actions, runner <code class="inl">windows-latest</code>, .NET <code class="inl">8.0.x</code></td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Tiga bagian agent</h3>
+<div class="grid g3">
+<div class="card">
+<h4>Agent.Core</h4>
+<div class="ck"><code class="inl">net8.0</code> &middot; class library</div>
+<p class="small">Protokol, payload, koneksi Socket.IO, logika updater, upload Nextcloud, diagnosa. Sengaja <b>bukan</b> <code class="inl">net8.0-windows</code> supaya seluruh logikanya bisa diuji dari Linux.</p>
+</div>
+<div class="card">
+<h4>Agent.Service</h4>
+<div class="ck"><code class="inl">net8.0-windows</code> &middot; Windows Service</div>
+<p class="small">Berjalan sebagai <b>LocalSystem</b> tanpa jendela. Menghubungkan ke server, meneruskan perintah ke overlay lewat named pipe, mengatur daya &amp; Task Manager, menjalankan auto-update.</p>
+</div>
+<div class="card">
+<h4>Agent.Overlay</h4>
+<div class="ck"><code class="inl">net8.0-windows</code> &middot; WPF</div>
+<p class="small">Jendela layar kunci yang dilihat pelanggan. Menampilkan form login, mini panel sesi, dialog PIN teknisi, dan kartu progres update.</p>
+</div>
+</div>
+
+<div class="codehead">Cara Service dan Overlay bicara<span></span></div>
+<pre><code>Named pipe  :  \\.\pipe\v3netbill-agent
+             :  duplex, message mode, buffer 8192, maxInstances 1
+
+Service -&gt; Overlay : StateUpdate, SessionStarted, SessionStopped, SessionTick,
+                      LoginResult, PinVerifyResult, ServerLink, OtpResult,
+                      CreatePasswordResult, PowerResult, UpdateProgress
+Overlay -&gt; Service : LoginRequest, PinVerifyRequest, StateRequest,
+                      StopSessionRequest, OtpRequest, CreatePasswordRequest,
+                      PowerRequest, BatalUpdateRequest</code></pre>
+<div class="box bad"><span class="bt">Enum pipe ada dua kali</span>
+Daftar tipe pesan di-<b>define dua kali</b>: di
+<code class="inl">Worker.cs</code> (service) dan <code class="inl">PipeClient.cs</code>
+(overlay). Menambah nilai baru wajib menambahkannya di <b>keduanya</b> dengan
+nomor yang sama persis.
+</div>
+
+<h3>Cara kerja layar kunci</h3>
+<div class="codehead">Tiga kondisi tampilan overlay<span></span></div>
+<pre><code>TERKUNCI          : layar penuh, topmost, keyboard hook AKTIF
+                  -&gt; kartu login + wallpaper + tombol power + "maintenance"
+
+SESI BERJALAN      : hanya 340 x 268 px di pojok kanan atas
+                  -&gt; mini panel, keyboard hook NONAKTIF
+
+SIAP / TIDAK TAHU : minimize, tidak topmost</code></pre>
+<div class="box warn"><span class="bt">Hook keyboard hanya memblokir sebagian</span>
+Hook <code class="inl">WH_KEYBOARD_LL</code> memblokir <b>Alt+Tab, Win, dan Alt+F4</b>.
+<code class="inl">Ctrl+Alt+Del</code> <b>sengaja tidak</b> diblokir &mdash; ini batas
+keamanan Windows yang tidak bisa dilewati dari userland.
+</div>
+
+<h3>Semua tombol &mdash; kartu login (layar kunci)</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Kontrol</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td>Kolom Kode</td><td>Maks <b>6 karakter</b>. Watermark &ldquo;KODE VOUCHER / MEMBER&rdquo;.</td></tr>
+<tr><td>Kolom Password</td><td>Maks <b>4 karakter</b>. Watermark &ldquo;PASSWORD&rdquo;.</td></tr>
+<tr><td><b>LOGIN</b></td><td>Kirim <code class="inl">client:login_request</code> ke server.</td></tr>
+<tr><td>Teks versi <code class="inl">v1.0.37.0</code></td><td>Nomor versi agent, dibaca dari registry.</td></tr>
+<tr><td>Titik status koneksi</td><td>Menghubungkan / Terhubung / Terputus.</td></tr>
+<tr><td><b>maintenance</b> (kiri bawah)</td><td>Buka dialog mode teknisi.</td></tr>
+<tr><td>Tombol Restart (kanan bawah)</td><td>Restart PC. <b>Ditolak</b> saat ada sesi berjalan.</td></tr>
+<tr><td>Tombol Matikan (kanan bawah)</td><td>Matikan PC. <b>Ditolak</b> saat ada sesi berjalan.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="box bad"><span class="bt">Kolom login dikosongkan setiap kali layar terkunci lagi</span>
+Dulu kode dan password pelanggan sebelumnya <b>tidak pernah dikosongkan</b>. Pelanggan
+berikutnya yang duduk di PC itu tinggal menekan MASUK &mdash; dan langsung masuk ke
+sesi <b>berbayar milik orang sebelumnya</b>. Itu kebocoran pendapatan nyata, bukan
+sekadar soal tampilan.
+</div>
+
+<h3>Semua tombol &mdash; mini panel sesi</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td>Hitung mundur (34 px)</td><td>Sisa waktu. <b>Merah</b> kalau &le; 300 detik. Jadi &ldquo;SERVER TERPUTUS&rdquo; kalau koneksi hilang.</td></tr>
+<tr><td>Sembunyikan (ikon minus)</td><td>Minimkan panel ini.</td></tr>
+<tr><td><b>Ganti password</b> (ikon kunci)</td><td>Buka dialog ganti password akun yang sedang dipakai. Butuh password lama.</td></tr>
+<tr><td><b>STOP</b> (ikon kotak)</td><td>Akhiri sesi. <b>Sekali klik</b>, tanpa konfirmasi.</td></tr>
+</tbody>
+</table>
+</div>
+<p class="small muted">
+Dialog ganti password punya tiga kolom: <b>password lama</b>, <b>baru</b>,
+<b>ulangi baru</b>. Password awal semua akun baru adalah <code class="inl">0000</code>,
+dan itu ditampilkan sebagai petunjuk di kolom lama.
+</p>
+
+<h3>Semua tombol &mdash; dialog mode teknisi</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td>Kolom PIN</td><td>Maks 6 karakter.</td></tr>
+<tr><td><b>KIRIM OTP KE TELEGRAM</b></td><td>Minta kode 6 digit dikirim ke Telegram, berlaku 5 menit, sekali pakai.</td></tr>
+<tr><td><b>STOP AGENT (DARURAT)</b></td><td>Matikan agent &mdash; <b>hanya muncul setelah PIN bypass diterima</b>.</td></tr>
+<tr><td><b>OK</b></td><td>Verifikasi PIN. Berhasil &rarr; buka akses desktop tanpa penagihan.</td></tr>
+<tr><td><b>BATAL</b></td><td>Tutup dialog dan kembalikan kartu login.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="box info"><span class="bt">PIN emergency</span>
+Kalau <code class="inl">pin_bypass_hash</code> belum pernah diatur, semua PC memakai PIN
+darurat <code class="inl">123456</code>. Sudah diubah lewat Pengaturan &rarr; Agent &amp;
+Keamanan.
+</div>
+
+<h3>Semua tombol &mdash; kartu update di overlay</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td><b>Batalkan update</b></td><td>Berhenti. <b>Khusus teknisi</b>. Unduhan dibiarkan selesai lalu berkasnya dibuang.</td></tr>
+</tbody>
+</table>
+</div>
+<p class="small muted">
+Kartu ini <b>menutupi form login</b> dan tidak bisa ditutup (ESC tidak bekerja) selama
+update berjalan &mdash; tujuannya supaya pelanggan tidak mengira PC selesai di-patch lalu
+tekan LOGIN. Tampilannya menunjukkan tahap, persentase, dan hitung mundur 10 detik
+sebelum restart.
+</p>
+
+<h3>Semua tombol &mdash; dialog uninstall</h3>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tombol</th><th>Fungsi</th></tr></thead>
+<tbody>
+<tr><td>Kolom PIN</td><td>Verifikasi ke server <b>sebelum</b> ada yang dihapus.</td></tr>
+<tr><td><b>Hapus Agent</b></td><td>Lanjut uninstall.</td></tr>
+<tr><td><b>Batal</b></td><td>Batalkan &mdash; mengembalikan kode <b>2</b> ke MSI.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="box bad"><span class="bt">Verifikasi PIN harus duluan, baru boleh menyentuh apa pun</span>
+Versi lama skrip uninstall menghapus registry &mdash; termasuk
+<code class="inl">PcId</code> dan <code class="inl">AgentToken</code> &mdash; lalu
+menjadi tidak bisa verifikasi PIN karena datanya sudah hilang. <b>Uninstall tidak boleh
+bergantung pada data yang justru dihapus oleh proses uninstall.</b>
+</div>
+
+<h3>Cara membuat MSI</h3>
+
+<h4>Langkah 0 &mdash; cek tiga hal ini dulu</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Yang</th><th>Tempat</th><th>Aturan</th></tr></thead>
+<tbody>
+<tr><td><b>Nomor versi</b></td><td><code class="inl">Installer/Product.wxs</code> &rarr; <code class="inl">Product/@Version</code></td><td><b>WAJIB naik</b> tiap ada perubahan. Guard CI menolak kalau tidak lebih baru dari versi di server.</td></tr>
+<tr><td>RustDesk versi + sha256</td><td><code class="inl">.github/workflows/build-agent.yml</code> &rarr; <code class="inl">env</code></td><td>Ganti versi berarti ganti <b>keduanya</b>.</td></tr>
+<tr><td><code class="inl">SERVER_URL</code></td><td>GitHub Actions <b>variable</b> (bukan secret)</td><td>Diisi ke registry saat instalasi.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h4>Langkah 1 &mdash; build di CI (jalur yang benar)</h4>
+<p class="small">Cukup <code class="inl">git push</code> ke <code class="inl">main</code>.
+Satu siklus &asymp; 2 menit.</p>
+<pre><code>publish Agent.Service + Agent.Overlay   (self-contained win-x64)
+unduh RustDesk 1.4.9 + verifikasi sha256 + cek header MZ
+install wix 4.0.5 + extension WixToolset.UI.wixext
+generate SvcDepFiles.wxs + OverlayDepFiles.wxs
+wix build  -&gt; artifact "v3NetbillAgentSetup"
+verify MSI: isi file, SERVER_URL, ProductVersion, RustDesk ada, versi &gt; server</code></pre>
+<div class="box warn"><span class="bt">Perhatikan format &mdash; ini error yang sudah pernah kejadian 6 kali</span>
+Format versi <code class="inl">major.minor.build.revision</code>, tiap bagian 0&ndash;255,
+dan <b>build dibandingkan sebelum revision</b>. Jadi <code class="inl">1.0.10.0 &gt; 1.0.9.0</code>.
+</div>
+
+<h4>Langkah 2 &mdash; validasi lokal (cepat, tanpa CI)</h4>
+<pre><code>docker run --rm -v "$PWD/v3NetbillAgent:/w" -w /w \
+  mcr.microsoft.com/dotnet/sdk:8.0 bash -c '
+dotnet publish Agent.Service/Agent.Service.csproj -c Release -r win-x64 \
+  --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false \
+  -o /w/artifacts/Agent.Service
+dotnet publish Agent.Overlay/Agent.Overlay.csproj -c Release -r win-x64 \
+  --self-contained true -p:PublishSingleFile=false -p:PublishTrimmed=false \
+  -p:EnableWindowsTargeting=true -o /w/artifacts/Agent.Overlay'</code></pre>
+<div class="box bad"><span class="bt"><code class="inl">EnableWindowsTargeting=true</code> wajib di Linux</span>
+Tanpa itu build <code class="inl">Agent.Overlay</code> gagal dengan
+<code class="inl">NETSDK1100</code> &mdash; karena <code class="inl">net8.0-windows</code> + <code class="inl">UseWPF</code>.
+Di CI (runner Windows) flag itu tidak diperlukan.
+</div>
+
+<h4>Kode error WiX yang perlu diketahui</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Kode</th><th>Arti</th><th>Tindakan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">WIX0005</code></td><td>Elemen tak dikenal</td><td>Perbaiki <code class="inl">.wxs</code></td></tr>
+<tr><td><code class="inl">WIX0103</code></td><td>Berkas sumber tidak ketemu</td><td>Perbaiki path <code class="inl">Source</code></td></tr>
+<tr><td><code class="inl">WIX0150</code></td><td>Preprocessor variable undefined</td><td>Lupa mengoper <code class="inl">-d NAME=...</code></td></tr>
+<tr><td><code class="inl">WIX0280</code></td><td><code class="inl">-b</code> dapat berkas</td><td>Harus <b>direktori</b></td></tr>
+<tr><td><code class="inl">WIX0094</code>, <code class="inl">WIX0233</code>, <code class="inl">WIX0044</code>, <code class="inl">WIX1006</code></td><td>Error tahap <b>LINK</b></td><td><b>Hanya terlihat di CI Windows.</b> Build lokal tidak akan menangkapnya.</td></tr>
+<tr><td><code class="inl">WIX0389</code>, <code class="inl">WIX0000</code></td><td>False positive Linux</td><td><b>Abaikan.</b> WiX hanya benar-benar mendukung Windows.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="box bad"><span class="bt">Ubah SATU hal per siklus CI</span>
+Kalau tiga custom action diubah sekaligus, kegagalan keempat tidak jelas milik
+perubahan yang mana &mdash; dan tiga siklus CI pernah terbuang seperti itu.
+</div>
+
+<h4>Jebakan <code class="inl">-d</code> yang paling merusak</h4>
+<div class="codehead">Yang benar<span></span></div>
+<pre><code># CI meneruskan:
+  -d SERVER_URL="${{ env.SERVER_URL }}"
+
+# Product.wxs harus dikonsumsi sebagai preprocessor variable:
+  &lt;Property Id="SERVER_URL" Value="$(var.SERVER_URL)" /&gt;</code></pre>
+<p class="small">
+Kalau <code class="inl">Value</code> ditulis literal
+(<code class="inl">Value="http://localhost:3000"</code>), define-nya tidak pernah terpakai
+&mdash; agent terpasang lalu mencoba konek ke <b>localhost di PC-nya sendiri</b>.
+Gejalanya: semua PC jadi OFFLINE, wallpaper tidak pernah berubah, dan log server
+tidak menunjukkan apa-apa karena agent tidak pernah sampai.
+</p>
+<p class="small">
+Cara memastikan: <b>isi</b> build, bukan exit code-nya.
+<code class="inl">grep 'http://localhost:3000' &lt;file&gt;.msi</code> harus kosong.
+Dan dua MSI berturut-turut bisa <b>sama-sama 88.969.137 byte</b> padahal isinya
+berbeda &mdash; yang menentukan hanya <code class="inl">sha256</code>, bukan ukuran.
+</p>
+
+<h3>Pembaruan otomatis per-PC</h3>
+<div class="codehead">Alur lengkap satu PC<span></span></div>
+<pre><code>Operator centang PC di Halaman PC Management -&gt; "Perbarui N PC"
+  -&gt; kolom Pc.autoUpdate = true
+  -&gt; SESI BARU DITOLAK, sesi yang berjalan dibiarkan
+  -&gt; auto-shutdown DILEWATI (PC harus tetap menyala)
+  -&gt; agent:auto_update_config {aktif:true} dikirim ke PC itu SAJA
+  -&gt; agent menunggu sesi berhenti, lalu:
+       unduh -&gt; verifikasi sha256 -&gt; msiexec -&gt; restart
+  -&gt; overlay menampilkan progres + peringatan
+  -&gt; selesai -&gt; versi naik -&gt; toggle LEPAS OTOMATIS</code></pre>
+
+<h4>Pengaman yang harus dijaga</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Aturan</th><th>Alasan</th></tr></thead>
+<tbody>
+<tr><td>Sesi berjalan: toggle tetap bisa ON, efeknya <b>menunggu</b></td><td>Menolak tagihan yang sedang berjalan bukan urusan sistem pembaruan.</td></tr>
+<tr><td>Jangan pernah menyalakan sesi dari dashboard selama flag aktif</td><td>Login dari layar PC, Start dari dashboard, dan buat voucher+Start semuanya harus ditolak.</td></tr>
+<tr><td>Status <code class="inl">AutoUpdateAktif</code> &amp; <code class="inl">LastAttempt</code> di <b>registry</b></td><td>Mati listrik di tengah unduhan tidak boleh membuat PC kembali normal tanpa menyelesaikan update.</td></tr>
+<tr><td>Maks <b>2</b> percobaan gagal, jeda 1 jam</td><td>Setelah 2 kali gagal, berhenti &mdash; tapi toggle tetap ON supaya operator pegang kendali.</td></tr>
+<tr><td><code class="inl">ForceReboot=1</code> wajib</td><td>Tanpa itu msiexec selesai tapi PC tidak restart &rarr; versi tidak naik &rarr; flag tidak pernah lepas &rarr; <b>PC terkunci selamanya</b>.</td></tr>
+<tr><td>Timer berkala <b>dihentikan</b> selama flag aktif</td><td>Dua <code class="inl">msiexec</code> bersamaan = instalasi gagal setengah jalan.</td></tr>
+<tr><td>Ambang versi minimum <b>1.0.27.0</b></td><td><code class="inl">1.0.26.0</code> memahami event config tapi <b>tidak punya</b> <code class="inl">ForceReboot</code>.</td></tr>
+<tr><td>Toggle lepas otomatis saat versi naik</td><td>Tanpa ini flag bisa menggantung selamanya.</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="codehead">Perintah msiexec yang dipakai agent<span></span></div>
+<pre><code>msiexec /i "&lt;msi&gt;" /qn /norestart REBOOT=ReallySuppress \
+        ForceReboot=1 /l*v "&lt;msi&gt;.log"</code></pre>
+
+<div class="box warn"><span class="bt">Perbandingan versi harus numerik per bagian</span>
+<code class="inl">string.Compare</code> adalah perbandingan leksikografis: pada
+<code class="inl">"1.0.10.0"</code> dan <code class="inl">"1.0.9.0"</code>, karakter
+&ldquo;1&rdquo; datang sebelum &ldquo;9&rdquo;, jadi <code class="inl">1.0.10.0</code>
+dianggap <b>lebih kecil</b> &mdash; dan upgrade tidak pernah terjadi. Ini jenis bug
+yang paling sulit ketahuan: aplikasi terlihat &ldquo;sudah terbaru&rdquo; padahal ada patch.
+</div>
+
+<h4>Tahapan &amp; persentase yang tampil di overlay</h4>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Tahap</th><th>Persen</th><th>Pesan</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">unduh</code></td><td>5 &rarr; 70</td><td>Mengunduh pembaruan...</td></tr>
+<tr><td><code class="inl">verifikasi</code></td><td>75</td><td>Memeriksa keutuhan berkas...</td></tr>
+<tr><td><code class="inl">restart</code></td><td>95</td><td>Pembaruan terpasang. PC akan restart sebentar lagi. + hitung mundur 10 detik</td></tr>
+<tr><td><code class="inl">pasang</code></td><td>90</td><td>Memasang pembaruan. Jangan matikan PC ini.</td></tr>
+<tr><td><code class="inl">selesai</code></td><td>100</td><td>Pembaruan selesai.</td></tr>
+<tr><td><code class="inl">gagal</code></td><td>100</td><td>Pembaruan gagal. PC tidak direstart, hubungi teknisi.</td></tr>
+<tr><td><code class="inl">diam</code></td><td>100</td><td>PC ini sudah versi terbaru. <b>Tidak</b> menjanjikan restart.</td></tr>
+<tr><td><code class="inl">batal</code></td><td>&mdash;</td><td>Dibatalkan teknisi.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Registry Windows</h3>
+<div class="codehead">HKLM\Software\v3Netbill\Agent<span></span></div>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Nilai</th><th>Ditulis oleh</th><th>Isi</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">ServerUrl</code></td><td>MSI</td><td>URL server <b>lengkap dengan skema</b>, tanpa <code class="inl">/session</code>.</td></tr>
+<tr><td><code class="inl">PcId</code></td><td>MSI</td><td>UUID PC dari Halaman PC Management.</td></tr>
+<tr><td><code class="inl">AgentToken</code></td><td>MSI</td><td>Kunci agent. <b>Sangat sensitif.</b></td></tr>
+<tr><td><code class="inl">AgentVersion</code></td><td>MSI</td><td>Dari <code class="inl">[ProductVersion]</code> &mdash; otomatis, tidak diketik.</td></tr>
+<tr><td><code class="inl">MaintenanceMode</code></td><td>Tombol STOP AGENT</td><td>1 = PC dibuka tanpa penagihan.</td></tr>
+<tr><td><code class="inl">PreventSleep</code></td><td>Server</td><td>&ldquo;true&rdquo;/&ldquo;false&rdquo;.</td></tr>
+<tr><td><code class="inl">BypassPinHash</code></td><td>Server</td><td>Hash bcrypt PIN bypass.</td></tr>
+<tr><td><code class="inl">AutoUpdateEnabled</code></td><td>Server</td><td>Flag auto-update aktif.</td></tr>
+<tr><td><code class="inl">OtpBotToken</code>, <code class="inl">OtpChatId</code></td><td>Server</td><td>Token bot Telegram.</td></tr>
+<tr><td><code class="inl">Nextcloud*</code>, <code class="inl">PcName</code></td><td>Server</td><td>Konfigurasi upload log.</td></tr>
+</tbody>
+</table>
+</div>
+<div class="codehead">Urutan konfigurasi<span></span></div>
+<pre><code>1. Registry HKLM\Software\v3Netbill\Agent\[nilai]
+2. appsettings.json   (lalu variabel environment, lalu argumen baris perintah)
+3. Nilai bawaan di dalam kode</code></pre>
+
+<div class="box bad"><span class="bt">Registry per-profil, bukan <code class="inl">Registry.CurrentUser</code></span>
+Service berjalan sebagai <b>LocalSystem</b>, jadi
+<code class="inl">Registry.CurrentUser</code> menunjuk profil SYSTEM
+(<code class="inl">S-1-5-18</code>) &mdash; nilainya tidak pernah sampai ke akun
+pelanggan. Fitur &ldquo;blokir Task Manager&rdquo; pernah <b>tidak berfungsi sama
+sekali</b> selama berminggu-minggu karena ini, tanpa satu pun error.
+Kode yang benar mengiterasi <code class="inl">Registry.Users</code> (melewati
+<code class="inl">_Classes</code> dan key berawalan titik), lalu menyiarkan
+perubahan supaya tidak baru berlaku setelah Task Manager ditutup.
+</div>
+
+<h3>Log dan diagnosa</h3>
+<div class="codehead">Lokasi log<span></span></div>
+<pre><code>C:\ProgramData\v3NetbillAgent\logs\agent-YYYY-MM-DD.log
+C:\ProgramData\v3NetbillAgent\logs\overlay-YYYY-MM-DD.log
+
+Retensi    : 30 hari (dihapus otomatis sekali per hari)
+Batas/hari : 20 MB &mdash; TIDAK memotong berkas, hanya melewati baris "tick sehat"
+Heartbeat  : dicatat tiap 20 tick (5 menit) saat sehat, TIAP tick saat gagal</code></pre>
+<div class="box warn"><span class="bt">Log tidak boleh dipotong di tengah baris</span>
+Versi lama memakai <code class="inl">SetLength(250_000)</code> yang memotong 75% log
+<b>di tengah baris, tanpa penanda</b> &mdash; dan itu menghapus persis jendela waktu
+yang dibutuhkan saat menelusuri insiden 8 jam. Sudah dihapus.
+</div>
+
+<div class="codehead">Upload log ke Nextcloud<span></span></div>
+<p class="small">
+Tiap 5 menit, terpisah dari koneksi v3netbill, log dikirim via WebDAV dengan nama
+berkas <b>berawalan nama PC</b> &mdash; misalnya
+<code class="inl">PC001-agent-2026-10-02.log</code>. Tujuannya supaya kasir tidak
+perlu naik ke PC klien.
+</p>
+
+<div class="codehead">Paket diagnosa otomatis<span></span></div>
+<p class="small">
+Terpicu saat socket ditandai mati, dijeda 45 detik supaya log ikut memuat proses
+pemulihan. Batas: 1,5 MB per berkas dilewati, 4 MB per zip, jeda 30 menit, maks
+4 per hari.
+</p>
+<div class="box bad"><span class="bt">Yang SENGAJA tidak pernah dikumpulkan</span>
+Registry dan <code class="inl">appsettings.json</code> <b>tidak boleh</b> masuk paket
+diagnosa. Isinya memuat <code class="inl">AgentToken</code> (cukup untuk mengganti
+password akun orang), <code class="inl">OtpBotToken</code> yang merupakan token bot
+Telegram <b>aktif</b>, dan hash PIN bypass.
+</div>
+
+<h2 id="api-rest">Referensi API REST</h2>
+<p class="small muted">
+Semua path diawali <code class="inl">/api</code>.
+Legenda: <span class="tag t-pub">PUBLIK</span> tanpa JWT &middot;
+<span class="tag t-any">JWT</span> role apa pun &middot;
+<span class="tag t-adm">ADMIN</span> khusus admin.
+</p>
+
+<h3>Autentikasi &amp; user</h3>
+<div class="tblwrap">
+<table><thead><tr><th>Method</th><th>Path</th><th>Peran</th><th>Fungsi</th></tr></thead><tbody>
+<tr><td>POST</td><td><code class="inl">/api/auth/login</code></td><td><span class="tag t-pub">PUBLIK</span></td><td>Login &rarr; dapat JWT (24 jam)</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/auth/users</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Tambah operator</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/auth/users</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Daftar operator</td></tr>
+<tr><td>DELETE</td><td><code class="inl">/api/auth/users/:id</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Hapus operator (tidak bisa diri sendiri / admin terakhir)</td></tr>
+</tbody></table></div>
+
+<h3>PC</h3>
+<div class="tblwrap">
+<table><thead><tr><th>Method</th><th>Path</th><th>Peran</th><th>Fungsi</th></tr></thead><tbody>
+<tr><td>GET</td><td><code class="inl">/api/pcs</code></td><td><span class="tag t-any">JWT</span></td><td>Daftar PC lengkap</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/pcs/ringkas</code></td><td><span class="tag t-pub">PUBLIK</span></td><td>Daftar PC ringkas untuk halaman login (4 field saja)</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/pcs</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Tambah PC &rarr; dapat agentToken</td></tr>
+<tr><td>PATCH</td><td><code class="inl">/api/pcs/:id/nama</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Ganti nama (duplikat &rarr; 409)</td></tr>
+<tr><td>PATCH</td><td><code class="inl">/api/pcs/:id/rusak</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Tandai / batalkan PC rusak</td></tr>
+<tr><td>PATCH</td><td><code class="inl">/api/pcs/:id/watt</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Set daya (1&ndash;1000 watt)</td></tr>
+<tr><td>PATCH</td><td><code class="inl">/api/pcs/auto-update</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Nyalakan / matikan auto-update multi-PC</td></tr>
+<tr><td>DELETE</td><td><code class="inl">/api/pcs/:id</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Hapus PC (rusak &rarr; 409, ada sesi &rarr; 400)</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/pcs/:id/unlock</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Paksa kunci layar PC</td></tr>
+</tbody></table></div>
+
+<h3>Akun (voucher &amp; member)</h3>
+<div class="tblwrap">
+<table><thead><tr><th>Method</th><th>Path</th><th>Peran</th><th>Fungsi</th></tr></thead><tbody>
+<tr><td>GET</td><td><code class="inl">/api/accounts</code></td><td><span class="tag t-any">JWT</span></td><td>Daftar akun (filter tipe &amp; status)</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/accounts/voucher</code></td><td><span class="tag t-any">JWT</span></td><td>Buat voucher (nominal kelipatan 500)</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/accounts/member</code></td><td><span class="tag t-any">JWT</span></td><td>Buat member (nama 4&ndash;40 karakter)</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/accounts/:id/topup</code></td><td><span class="tag t-any">JWT</span></td><td>Tambah waktu</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/accounts/:id/koreksi</code></td><td><span class="tag t-any">JWT</span></td><td>Tarik waktu</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/accounts/:id/batal-transaksi</code></td><td><span class="tag t-any">JWT</span></td><td>Batalkan transaksi (10 menit terakhir saja)</td></tr>
+<tr><td>PATCH</td><td><code class="inl">/api/accounts/:id/password</code></td><td><span class="tag t-any">JWT</span></td><td>Ganti password (tanpa password lama &mdash; jalur operator)</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/accounts/:id/revoke</code></td><td><span class="tag t-any">JWT</span></td><td>Nonaktifkan akun + hentikan sesinya</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/transactions</code></td><td><span class="tag t-any">JWT</span></td><td>Riwayat transaksi</td></tr>
+</tbody></table></div>
+<div class="box info"><span class="bt">Dua jalur ganti password</span>
+<code class="inl">PATCH /accounts/:id/password</code> (web) <b>tidak</b> meminta
+password lama, karena yang mengganti adalah operator warnet. Event agent
+<code class="inl">client:create_password</code> (dari layar PC) <b>mewajibkan dan
+memverifikasi</b> <code class="inl">passwordLama</code> &mdash; karena orang yang
+mengganti adalah pemilik akun yang sedang duduk di komputer itu.
+</div>
+
+<h3>Laporan</h3>
+<div class="tblwrap">
+<table><thead><tr><th>Method</th><th>Path</th><th>Peran</th><th>Fungsi</th></tr></thead><tbody>
+<tr><td>GET</td><td><code class="inl">/api/reports/today</code></td><td><span class="tag t-any">JWT</span></td><td>Rekap hari buku berjalan</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/reports/daily?dari&sampai</code></td><td><span class="tag t-any">JWT</span></td><td>Rekap per hari (maks 366 hari)</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/reports/range?dari&sampai</code></td><td><span class="tag t-any">JWT</span></td><td>Total + rincian rentang</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/reports/uptime?dari&sampai</code></td><td><span class="tag t-any">JWT</span></td><td>Uptime per PC + hitungan listrik</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/reports/uptime/pdf</code></td><td><span class="tag t-any">JWT</span></td><td>Unduh PDF uptime</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/laporan/kirim-tutup-hari</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Kirim laporan tutup hari sekarang</td></tr>
+</tbody></table></div>
+
+<h3>Pengaturan</h3>
+<div class="tblwrap">
+<table><thead><tr><th>Method</th><th>Path</th><th>Peran</th><th>Fungsi</th></tr></thead><tbody>
+<tr><td>GET</td><td><code class="inl">/api/settings</code></td><td><span class="tag t-any">JWT</span></td><td><b>Seluruh Setting &mdash; jangan dicetak ke dokumen.</b></td></tr>
+<tr><td>PATCH</td><td><code class="inl">/api/settings</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Ubah satu key</td></tr>
+<tr><td>PATCH</td><td><code class="inl">/api/settings/password</code></td><td><span class="tag t-any">JWT</span></td><td>Ganti sandi sendiri</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/settings/installer</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Upload MSI (maks 200 MB)</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/settings/installer</code></td><td><span class="tag t-any">JWT</span></td><td>Unduh MSI</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/settings/installer/info</code></td><td><span class="tag t-any">JWT</span></td><td>Info MSI: versi, ukuran, sha256</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/settings/apk</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Upload APK</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/settings/apk</code></td><td><span class="tag t-any">JWT</span></td><td>Unduh APK</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/settings/apk/info</code></td><td><span class="tag t-any">JWT</span></td><td>Info APK: versionCode, versi, ukuran, sha256</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/settings/wallpaper</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Upload wallpaper (maks 10 MB)</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/settings/wallpaper</code></td><td><span class="tag t-pub">PUBLIK</span></td><td>Ambil wallpaper layar kunci</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/settings/backup</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Backup database sekarang</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/settings/backup/list</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Daftar backup</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/settings/backup/download</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Unduh backup</td></tr>
+<tr><td>PATCH</td><td><code class="inl">/api/settings/pin-uninstall</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Set PIN uninstall</td></tr>
+<tr><td>PATCH</td><td><code class="inl">/api/settings/bypass-pin</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Set / hapus PIN bypass</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/settings/verify-pin</code></td><td><span class="tag t-pub">PUBLIK</span></td><td>Verifikasi PIN (identitas: pcId + agentToken)</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/settings/agent/cek-pembaruan</code></td><td><span class="tag t-pub">PUBLIK</span></td><td>Agent cek versi MSI</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/settings/agent/unduh-installer</code></td><td><span class="tag t-pub">PUBLIK</span></td><td>Agent unduh MSI</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/dokumentasi</code></td><td><span class="tag t-adm">ADMIN</span></td><td><b>Dokumen yang sedang Anda baca.</b></td></tr>
+</tbody></table></div>
+
+<h3>Teknisi, log, notifikasi, diagnosa</h3>
+<div class="tblwrap">
+<table><thead><tr><th>Method</th><th>Path</th><th>Peran</th><th>Fungsi</th></tr></thead><tbody>
+<tr><td>GET</td><td><code class="inl">/api/teknisi</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Daftar akun teknisi</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/teknisi</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Buat / ubah teknisi</td></tr>
+<tr><td>PATCH</td><td><code class="inl">/api/teknisi/aktif</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Nyalakan / matikan akses teknisi</td></tr>
+<tr><td>DELETE</td><td><code class="inl">/api/teknisi/:username</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Hapus teknisi (PC-nya dikunci dulu)</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/teknisi/status</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Sesi teknisi yang sedang berjalan</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/log-billing</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Daftar berkas log harian</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/log-billing/:tanggal</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Isi log (bisa disaring)</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/activity-log</code></td><td><span class="tag t-any">JWT</span></td><td>Jejak aktivitas (berhalaman)</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/notifikasi/token</code></td><td><span class="tag t-any">JWT</span></td><td>Daftarkan token push</td></tr>
+<tr><td>DELETE</td><td><code class="inl">/api/notifikasi/token</code></td><td><span class="tag t-any">JWT</span></td><td>Cabut token push</td></tr>
+<tr><td>POST</td><td><code class="inl">/api/diagnosa</code></td><td><span class="tag t-pub">PUBLIK</span></td><td>Agent unggah paket log (zip, maks 5 MB)</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/diagnosa</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Daftar paket diagnosa</td></tr>
+<tr><td>GET</td><td><code class="inl">/api/diagnosa/:nama</code></td><td><span class="tag t-adm">ADMIN</span></td><td>Unduh paket diagnosa</td></tr>
+</tbody></table></div>
+
+<h2 id="api-ws">Referensi WebSocket</h2>
+<p class="small muted">
+Namespace <code class="inl">/session</code> pada port 3000.
+Agent memakai handshake query <code class="inl">?pcId=...&amp;agentToken=...</code>;
+web dan mobile memakai <code class="inl">handshake.auth.token</code> (JWT).
+</p>
+
+<h3>Dikirim klien &rarr; server</h3>
+<div class="tblwrap">
+<table><thead><tr><th>Event</th><th>Pengirim</th><th>Isi</th></tr></thead><tbody>
+<tr><td><code class="inl">agent:register</code></td><td>Agent</td><td><code class="inl">{ pcId, agentToken, versiAgent?, rustdeskId? }</code></td></tr>
+<tr><td><code class="inl">agent:heartbeat</code></td><td>Agent</td><td><code class="inl">{ pcId }</code> &mdash; tiap <b>15 detik</b></td></tr>
+<tr><td><code class="inl">agent:auto_update_progress</code></td><td>Agent</td><td><code class="inl">{ pcId, agentToken, persen?, pesan?, tahap? }</code></td></tr>
+<tr><td><code class="inl">client:login_request</code></td><td>Overlay</td><td><code class="inl">{ pcId, kredensial: { kode, password } }</code></td></tr>
+<tr><td><code class="inl">client:create_password</code></td><td>Overlay</td><td><code class="inl">{ pcId, kode, passwordLama, password }</code></td></tr>
+<tr><td><code class="inl">client:stop_session</code></td><td>Overlay</td><td><code class="inl">{ pcId }</code></td></tr>
+<tr><td><code class="inl">dashboard:subscribe</code></td><td>Web / Mobile</td><td>&mdash; masuk room <code class="inl">dashboard</code></td></tr>
+<tr><td><code class="inl">dashboard:start_pc</code></td><td>Web / Mobile</td><td><code class="inl">{ pcId, kode }</code></td></tr>
+<tr><td><code class="inl">dashboard:start_voucher</code></td><td>Web / Mobile</td><td><code class="inl">{ pcId, nominal }</code></td></tr>
+<tr><td><code class="inl">dashboard:lock_pc</code></td><td>Web / Mobile</td><td><code class="inl">{ pcId }</code></td></tr>
+<tr><td><code class="inl">dashboard:shutdown_pc</code></td><td>Web / Mobile</td><td><code class="inl">{ pcId }</code></td></tr>
+</tbody></table></div>
+
+<h3>Dikirim server &rarr; klien</h3>
+<div class="tblwrap">
+<table><thead><tr><th>Event</th><th>Ke</th><th>Isi</th></tr></thead><tbody>
+<tr><td><code class="inl">client:login_result</code></td><td>Overlay</td><td><code class="inl">{ success, sessionId?, message? }</code></td></tr>
+<tr><td><code class="inl">session:start</code></td><td>Agent</td><td><code class="inl">{ sessionId, durasiDetikTersedia, account }</code></td></tr>
+<tr><td><code class="inl">session:tick</code></td><td>Agent</td><td><code class="inl">{ sisaDetik }</code> &mdash; tiap <b>1 detik</b></td></tr>
+<tr><td><code class="inl">session:stop</code></td><td>Agent</td><td><code class="inl">{ alasan }</code></td></tr>
+<tr><td><code class="inl">admin:lock</code></td><td>Agent</td><td><code class="inl">{ pcId }</code></td></tr>
+<tr><td><code class="inl">admin:shutdown</code></td><td>Agent</td><td><code class="inl">{ pcId }</code></td></tr>
+<tr><td><code class="inl">agent:otp_config</code></td><td>Agent</td><td><code class="inl">{ botToken, chatId }</code></td></tr>
+<tr><td><code class="inl">agent:bypass_config</code></td><td>Agent</td><td><code class="inl">{ hash }</code> &mdash; hash bcrypt PIN bypass</td></tr>
+<tr><td><code class="inl">agent:nextcloud_config</code></td><td>Agent</td><td><code class="inl">{ url, user, pass, folder, nama }</code></td></tr>
+<tr><td><code class="inl">agent:power_config</code></td><td>Agent</td><td><code class="inl">{ preventSleep }</code></td></tr>
+<tr><td><code class="inl">agent:auto_update_config</code></td><td>Agent</td><td><code class="inl">{ aktif }</code> &mdash; <b>per-PC, tidak pernah disiarkan global</b></td></tr>
+<tr><td><code class="inl">dashboard:pc_update</code></td><td>Room dashboard</td><td><code class="inl">{ pcs: [...], at }</code> &mdash; detail PC + sesi aktif</td></tr>
+<tr><td><code class="inl">dashboard:log</code></td><td>Room dashboard</td><td>Jejak aktivitas</td></tr>
+</tbody></table></div>
+
+<h2 id="alur">Cara Kerja End-to-End</h2>
+
+<h3>Alur 1 &mdash; pelanggan membayar lalu masuk</h3>
+<div class="codehead">Langkah demi langkah<span></span></div>
+<pre><code>1. KASIR: Dashboard -> VOUCHER BARU -> pilih nominal -> "Buat Voucher"
+2. BACKEND: validasi nominal (kelipatan 500)
+            -> kode 6 digit acak (dicek unik)
+            -> sisaWaktuDetik = floor(nominal / harga_per_menit * 60)
+            -> password = "0000" (bcrypt)
+            -> catat Transaction jenis BELI_BARU
+            -> tampilkan kode + password ke kasir
+
+3. KASIR: menulis kode di handout, memberitext ke pelanggan
+
+4. PELANGGAN: mengetik kode + 0000 di layar kunci PC
+
+5. OVERLAY: kirim client:login_request ke service lewat pipe
+
+6. SERVICE: kirim client:login_request ke server
+
+7. BACKEND: cek teknisi DULU (cegnah ada sesi teknisi)
+            -> baru cari Account: kodeUnik dulu, lalu nama
+            -> cek status ACTIVE
+            -> cek sisa waktu &gt; 0
+            -> voucher: cek belum &gt;30 hari tidak dipakai
+            -> createSessionAndStart()
+                 cek pc.rusak  (WAJIB sebelum lastUsedAt)
+                 cek pc.autoUpdate
+                 cek PC belum dipakai
+                 cek akun belum dipakai di PC lain
+            -> buat Session status BERJALAN
+            -> set Pc.status = ACTIVE
+            -> catat activity log + tulis berkas log billing
+            -> kirim notifikasi FCM ke admin
+
+8. BACKEND -> SERVICE: session:start { durasiDetikTersedia, account }
+
+9. SERVICE: blokir Task Manager + screensaver, kirim ke overlay
+
+10. OVERLAY: tampilkan mini panel, mulai hitung mundur
+
+11. SETIAP DETIK: backend hitung ulang sisa waktu,
+                 kirim session:tick ke overlay,
+                 broadcast dashboard:pc_update ke kasir</code></pre>
+
+<h3>Alur 2 &mdash; sesi berakhir</h3>
+<div class="codehead">Tiga jalan keluar<span></span></div>
+<pre><code>A. WAKTU HABIS
+   tick: sisa &lt;= 0 -> stopSession("habis")
+        -> Account.sisaWaktuDetik = 0  (voucher tidak bisa dipakai ulang)
+        -> kirim session:stop
+
+B. KASIR TEKAN KUNCI
+   dashboard -> WS dashboard:lock_pc
+   -> backend: unlockPc() -> stopSession("manual")
+   -> SISA WAKTU DIKEMBALIKAN ke akun
+   -> kirim admin:lock ke agent
+
+C. PELANGGAN TEKAN STOP (di layar PC)
+   overlay -> pipe StopSessionRequest
+   -> service -> WS client:stop_session
+   -> backend: unlockPc() -> stopSession("manual")
+   -> SISA WAKTU DIKEMBALIKAN
+
+SETIAP JALAN -> Pc.status = IDLE
+             -> Pc.terakhirAktifAt = sekarang  (timer auto-matikan mulai ulang)
+             -> catat activity log
+             -> broadcast ke dashboard</code></pre>
+
+<div class="box good"><span class="bt">Restart server tidak memutus sesi pelanggan</span>
+Waktu terpakai dihitung ulang dari <code class="inl">Session.waktuMulai</code> +
+saldo di database, jadi penghitung di memori cuma pengirim.
+<code class="inl">recoverRunningSessions()</code> menyalakan ulang tick setelah
+restart, dan sudah terbukti dozens kali di log produksi tanpa ada detik yang hilang.
+</div>
+
+<h3>Alur 3 &mdash; mode teknisi</h3>
+<pre><code>1. TEKNISI: klik teks "maintenance" di pojok kiri bawah
+2. OVERLAY: buka dialog PIN
+3. TEKNISI: masukkan PIN (atau minta OTP via Telegram)
+4. OVERLAY -> pipe PinVerifyRequest -> SERVICE
+5. SERVICE: coba hash bcrypt lokal, kalau gagal tanya server
+6. SERVER: validasi PIN (atau kode OTP 6 digit, berlaku 5 menit)
+7. BERHASIL:
+     -> buat baris SesiTeknisi (selesaiAt = NULL)
+     -> TIDAK buat baris Session
+     -> TIDAK buat baris Transaction   &lt;-- tidak masuk pendapatan
+     -> kirim session:start dengan durasi 12 jam (hanya agar overlay terbuka)
+8. TEKNISI: bekerja bebas di PC, tanpa penagihan
+9. SELESAI: tekan STOP, atau matikan sakelar "Akses Teknisi" di Pengaturan</code></pre>
+
+<h3>Alur 4 &mdash; pelanggan login, HP admin bunyi</h3>
+<pre><code>1. Sesi mulai -> backend panggil kabarPemakaiNotifikasi()
+2. Ambil semua token FCM milik user dengan role ADMIN
+3. Kirim ke FCM, dengan nama member DISENSOR:
+     "Budi Santoso" -> "bu***"
+     kode voucher   -> "500344" (penuh, bukan kredensial)
+4. Sumber ditulis supaya admin tahu:
+     "Member bu*** - PC001 (PC)"         <- pelanggan di komputer
+     "Member bu*** - PC003 (Dashboard)"  <- kasir tekan Start
+     "Voucher 500344 - PC005 (Dashboard)" <- kasir buat voucher + Start</code></pre>
+<div class="box warn"><span class="bt">Nama member tidak boleh masuk notifikasi utuh</span>
+Nama member adalah <b>kredensial login</b>-nya, dan notifikasi Android terlihat di
+<b>layar kunci HP yang bisa dilihat siapa saja</b>. Karena itu hanya dua karakter
+pertama yang dikirim. Kode voucher boleh penuh karena bukan kredensial.
+</div>
+
+<h2 id="troubleshoot">Troubleshooting</h2>
+<p class="lead">
+Cara mencari penyebab dari gejala yang terlihat. Urutannya sengaja dari yang
+paling sering dan paling murah dicek.
+</p>
+
+<div class="box bad"><span class="bt">Tiga keluhan yang pemetaannya TERBALIK dari penyebabnya</span>
+Ini dicatat karena kesalahan menebak di sini mahal &mdash; gejalanya terlihat seperti
+fitur rusak, padahal masalahnya justru sebaliknya.
+</div>
+<div class="tblwrap">
+<table>
+<thead><tr><th>Keluhan</th><th>Penyebab sebenarnya</th></tr></thead>
+<tbody>
+<tr><td>&ldquo;PC tidak auto-matikan lagi&rdquo;</td><td><b>Bukan</b> fiturnya rusak. Ada <code class="inl">SesiTeknisi</code> menggantung, dan pengamannya menganggap &ldquo;orang masih di depan PC&rdquo; &mdash; selamanya.</td></tr>
+<tr><td>&ldquo;PC saya kenapa, mati sendiri&rdquo;</td><td><b>Bukan</b> bug. Itu memang <code class="inl">checkAutoShutdown</code> yang bekerja. Cek <code class="inl">terakhirAktifAt</code> + <code class="inl">auto_shutdown_menit</code>.</td></tr>
+<tr><td>&ldquo;Kartu update nempel 100%, PC sudah bisa login&rdquo;</td><td>Kartu overlay yang <b>lama tertinggal</b>. State server sudah bersih; yang salah hanya tampilan.</td></tr>
+</tbody>
+</table>
+</div>
+
+<h3>Langkah 1 &mdash; cek yang paling mendasar</h3>
+<div class="codehead">Apakah server hidup?<span></span></div>
+<pre><code>docker compose ps
+docker compose logs --tail 50 v3netbill-backend
+curl -s http://localhost:3000/api/health</code></pre>
+<p class="small muted">
+Kalau <code class="inl">/api/health</code> tidak menjawab, <b>berhenti di sini</b> &mdash;
+semua gejala lain akan menyesatkan.
+</p>
+
+<h3>Gejala: PC OFFLINE di dashboard</h3>
+<div class="tblwrap">
+<table><thead><tr><th>Penyebab</th><th>Cara memastikan</th><th>Perbaikan</th></tr></thead><tbody>
+<tr><td>Agent mati</td><td>Di PC: <code class="inl">sc query v3NetbillAgent</code></td><td><code class="inl">sc start v3NetbillAgent</code></td></tr>
+<tr><td>Registry kosong / salah</td><td><code class="inl">reg query "HKLM\SOFTWARE\v3Netbill\Agent"</code></td><td>Pasang ulang MSI</td></tr>
+<tr><td><code class="inl">ServerUrl</code> salah</td><td>Cek nilai registry; harus <b>ada skemanya</b> dan <b>tanpa</b> <code class="inl">/session</code></td><td>Pasang ulang MSI</td></tr>
+<tr><td>Heartbeat macet (agen¡nf outlive)</td><td>Di log PC: banyak &ldquo;heartbeat gagal&rdquo; padahal <code class="inl">connected=True</code></td><td>Restart service</td></tr>
+<tr><td>Internet / tunnel putus</td><td>Dari PC: buka domain backend</td><td>Periksa jaringan</td></tr>
+</tbody></table></div>
+<div class="codehead">Heartbeat terakhir semua PC<span></span></div>
+<pre><code>docker exec postgres-15 psql -U billing_user -d v3netbill -c \
+"SELECT \"namaPc\", \"status\", \"lastHeartbeatAt\",
+        EXTRACT(EPOCH FROM (now() - \"lastHeartbeatAt\"))::int AS detik_lalu
+   FROM \"Pc\" ORDER BY \"lastHeartbeatAt\" NULLS FIRST;"</code></pre>
+<p class="small muted">
+Di bawah 30 detik = agent hidup. Di atas 30 detik = dianggap offline.
+<b>Null</b> berarti belum pernah konek sejak server restart.
+</p>
+
+<h3>Gejala: &ldquo;PC sudah memiliki sesi berjalan&rdquo; padahal tidak ada yang pakai</h3>
+<div class="codehead">Cek sesi di database<span></span></div>
+<pre><code>docker exec postgres-15 psql -U billing_user -d v3netbill -c \
+"SELECT p.\"namaPc\", a.\"kodeUnik\", a.\"nama\", s.\"durasiTerpakaiDetik\"
+   FROM \"Session\" s
+   JOIN \"Pc\" p ON p.id = s.\"pcId\"
+   JOIN \"Account\" a ON a.id = s.\"accountId\"
+  WHERE s.status = 'BERJALAN';"</code></pre>
+<div class="box warn"><span class="bt">Jangan menghapus baris Session untuk.testing</span>
+Menghapus baris itu melanggar seluruh aturan tick dan <b>menjatuhkan server</b>
+(<code class="inl">P2025</code> dari <code class="inl">session.update()</code> menjadi
+unhandled rejection &rarr; proses Node mati). Gunakan <code class="inl">stopSession</code>
+&mdash; itu jalur normalnya. Perbaikan harus diuji lewat jalur yang benar secara
+struktur, bukan yang paling singkat.
+</div>
+
+<h3>Gejala: &ldquo;Akun sedang dipakai di PCxxx&rdquo;</h3>
+<div class="codehead">Cari akun yang sedang jalan<span></span></div>
+<pre><code>docker exec postgres-15 psql -U billing_user -d v3netbill -c \
+"SELECT p.\"namaPc\", a.\"kodeUnik\", a.\"nama\"
+   FROM \"Session\" s
+   JOIN \"Pc\" p ON p.id = s.\"pcId\"
+   JOIN \"Account\" a ON a.id = s.\"accountId\"
+  WHERE s.status = 'BERJALAN' AND (a.\"nama\" = 'NAMA_MEMBER');"</code></pre>
+<p class="small muted">
+Penolakan ini memang benar: satu akun hanya boleh jalan di satu PC. Kalau dua
+sesi berbeda muncul bersamaan, itu balapan yang ditutup indeks unik parsial.
+</p>
+
+<h3>Gejala: &ldquo;Akun tidak ditemukan&rdquo; padahal kodenya jelas ada</h3>
+<div class="codehead">Cek akunnya<span></span></div>
+<pre><code>docker exec postgres-15 psql -U billing_user -d v3netbill -c \
+"SELECT id, tipe, \"kodeUnik\", \"nama\", \"sisaWaktuDetik\", status
+   FROM \"Account\"
+  WHERE \"kodeUnik\" = '123456' OR \"nama\" = 'Nama Member';"</code></pre>
+<div class="tblwrap">
+<table><thead><tr><th>Penyebab</th><th>Solusi</th></tr></thead><tbody>
+<tr><td><code class="inl">nama</code> diketik dengan huruf berbeda</td><td>Pencocokan nama member <b>case-sensitive</b>. Ketik persis seperti tertulis.</td></tr>
+<tr><td>Status <code class="inl">REVOKED</code></td><td>Nonaktifkan dulu di halaman Member. di halaman Member.</td></tr>
+<tr><td>Saldo 0</td><td>Topup, atau sesi sebelumnya habis.</td></tr>
+<tr><td>Voucher &gt; 30 hari tidak dipakai</td><td>Voucher sudah kedaluwarsa.</td></tr>
+<tr><td>Member diketik &gt; 6 karakter di layar PC</td><td>Kolom kode di layar kunci <b>membatasi 6 karakter</b>. Namanya terpotong &rarr; tidak cocok. Batas ini milik agent; server tidak bisa menaikkannya.</td></tr>
+</tbody></table></div>
+
+<h3>Gejala: server mati total setelah diubah</h3>
+<div class="box bad"><span class="bt">Dua penyebab yang paling sering</span>
+<ol style="margin:4px 0 0">
+<li><b>Error TypeScript yang tidak tertangkap test.</b> Vitest hanya membuang tipe,
+jadi &ldquo;Tests N passed&rdquo; tidak berarti bisa dikompilasi. Lihat baris
+&ldquo;Found N errors&rdquo; dari watcher.</li>
+<li><b><code class="inl">nest build</code> manual saat watcher jalan</b> &mdash;
+menghapus <code class="inl">dist</code> di tengah proses.</li>
+</ol>
+Perbaikan: sentuh <code class="inl">src/app.module.ts</code>, atau
+<code class="inl">docker compose restart v3netbill-backend</code>.
+Sesi pelanggan tetap selamat karena <code class="inl">recoverRunningSessions()</code>
+menyalakan tick dan waktu dihitung dari database.
+</div>
+
+<h3>Gejala: halaman web masih versi lama setelah build</h3>
+<div class="codehead">Perintah yang benar<span></span></div>
+<pre><code>docker compose exec v3netbill-frontend npm run build
+
+# Verifikasi: nama berkas berehash berubah setiap build
+ls -la frontend/dist/assets</code></pre>
+<p class="small muted">
+Build di dalam image backend <b>tidak</b> memperbarui halaman yang disajikan,
+karena <code class="inl">./frontend/dist</code> di-bind mount. &ldquo;Build sukses&rdquo;
+bukan bukti &ldquo;deploy sukses&rdquo; kalau ada lapisan mount di antaranya.
+</p>
+
+<h3>Gejala: dashboard menggantung di &ldquo;Menghubungkan&hellip;&rdquo;</h3>
+<p class="small">
+WebSocket lewat proxy Vite. Periksa <code class="inl">/socket.io</code> di
+<code class="inl">vite.config.ts</code>. Di produksi, periksa apakah
+<code class="inl">ServeStaticModule</code> mengecualikan
+<code class="inl">/socket.io</code> dan <code class="inl">/session</code>.
+</p>
+
+<h3>Gejala: clipboard gagal saat menyalin token</h3>
+<div class="box warn"><span class="bt">Clipboard API tidak jalan di HTTP biasa</span>
+Halaman yang dibuka lewat <code class="inl">http://192.168.x.x:3000</code>
+(non-secure) tidak punya <code class="inl">navigator.clipboard</code>, jadi
+pemanggilannya melempar <code class="inl">TypeError</code> dan selalu berakhir
+&ldquo;Gagal menyalin&rdquo;. Karena itu harus ada fallback
+<code class="inl">document.execCommand('copy')</code>.
+</div>
+
+<h3>Gejala: update agent mandek di tengah unduhan</h3>
+<p class="small">
+Pertama, cek apakah benar-benar mandek &mdash; heartbeat tetap hidup tiap 15 detik
+kan? Kalau iya, service-nya sehat dan yang bermasalah adalah <b>kecepatan lewat
+Cloudflare Tunnel</b> yang tidak stabil (terukur beda 50&times;: dari 2,9 MB/s
+sampai 56 KB/s pada jalur yang sama). Kalau kecepatan jatuh ke ~5 KB/s, berkas
+89 MB memang tidak mungkin selesai dalam 15 menit &mdash; jadi <b>ini bukan bug
+unduhan</b>, batas waktunya bekerja benar.
+</p>
+
+<h3>Gejala: nama member terpotong di layar PC</h3>
+<p class="small">
+Kolom kode di layar kunci <b>maks 6 karakter</b> (batas milik agent) dan kolom
+password <b>maks 4 karakter</b>. Akun dengan nama/kode lebih panjang tidak akan
+pernah bisa diketik sampai akhir. Server sudah menegakkan batas yang sama supaya
+akun yang tidak akan pernah bisa dipakai tidak ikut dibuat.
+</p>
+
+<h3>Gejala: push notifikasi tidak sampai</h3>
+<div class="tblwrap">
+<table><thead><tr><th>Penyebab</th><th>Cara memastikan</th></tr></thead><tbody>
+<tr><td>HP tanpa Google Play Services</td><td>HP degoogled atau ROM China tidak akan pernah menerima FCM.</td></tr>
+<tr><td>Login sebagai KASIR</td><td>Token <b>dicabut</b>, bukan didaftarkan. Sakelar notifikasi hanya muncul untuk ADMIN.</td></tr>
+<tr><td>izin notifikasi ditolak</td><td>Di HP: Pengaturan &rarr; Aplikasi &rarr; v3Netbill &rarr; Izin.</td></tr>
+<tr><td>Kredensial FCM kosong di server</td><td>Backend tetap jalan normal; pengiriman jadi no-op yang dilog sekali.</td></tr>
+<tr><td>Keystore hilang</td><td>Token FCM terikat keystore rilis. Kehilangan keystore = push mati untuk semua HP terdaftar.</td></tr>
+</tbody></table></div>
+
+<h3>Gejala: halaman web terlalu lebar di HP</h3>
+<p class="small">
+Beberapa tabel memakai <code class="inl">overflow-x-auto</code> tanpa petunjuk
+bisa digeser, sehingga kolom penting ada <b>di luar layar</b>. Pola perbaikannya
+sudah dipakai di halaman Log Aktivitas: di bawah <code class="inl">lg</code> tabel
+diganti <b>kartu bertumpuk</b>. Menilai ini <b>hanya dari desktop selalu lolos</b>
+&mdash; gejalanya baru terlihat saat dirender pada lebar HP.
+</p>
+
+<h2 id="keamanan">Catatan Keamanan</h2>
+<div class="box bad"><span class="bt">Yang paling sensitif di seluruh sistem</span>
+<table style="width:100%;margin-top:6px">
+<thead><tr><th>Data</th><th>Kenapa berbahaya</th></tr></thead>
+<tbody>
+<tr><td><code class="inl">Pc.agentToken</code></td><td>Cukup untuk <b>mengganti password akun orang</b> dan <b>menghentikan sesi</b> lewat WebSocket.</td></tr>
+<tr><td><code class="inl">Account.nama</code> (member)</td><td>Ini <b>kredensial login</b>-nya, bukan sekadar tampilan.</td></tr>
+<tr><td><code class="inl">JWT_SECRET</code></td><td>Dikosongkan = siapa pun yang bisa internet bisa menyamar jadi admin.</td></tr>
+<tr><td><code class="inl">agent_otp_bot_token</code></td><td>Token bot Telegram yang <b>aktif</b>.</td></tr>
+<tr><td>Password RustDesk</td><td><b>Tidak pernah</b> disimpan di server. Cuma diisi di dialog installer.</td></tr>
+</tbody></table>
+</div>
+
+<h3>Aturan yang tidak boleh dilanggar</h3>
+<ul>
+<li><b>Jangan pernah mencetak isi <code class="inl">GET /api/settings</code></b> ke
+dokumen, log, atau percakapan mana pun.</li>
+<li><b>Jangan menaruh berkas sensitif di <code class="inl">frontend/dist</code></b>
+&mdash; folder itu publik tanpa autentikasi.</li>
+<li><b>Jangan pernah menyertakan registry atau <code class="inl">appsettings.json</code></b>
+dalam paket diagnosa agent.</li>
+<li><b>Jangan mengembalikan &ldquo;tidak ada pembaruan&rdquo; untuk token asing.</b>
+Harus <code class="inl">401</code>, kalau tidak penyerang bisa memetakan token mana
+yang berlaku.</li>
+<li><b>Jangan samakan nama teknisi dengan nama/kode akun pelanggan.</b> Kalau sama,
+satu kode cocok ke dua tempat.</li>
+<li><b>Jangan membedakan pesan &ldquo;kode dikenal tapi PIN salah&rdquo;</b> dari
+&ldquo;Akun tidak ditemukan&rdquo; &mdash; itu membuat orang bisa memetakan kode
+technisi yang terdaftar.</li>
+<li><b>Sensor nama member di notifikasi.</b> Kirim dua karakter pertama saja.</li>
+</ul>
+
+<h3>Yang sudah ditangani</h3>
+<div class="tblwrap">
+<table><thead><tr><th>Hal</th><th>Status</th></tr></thead><tbody>
+<tr><td>Password disimpan apa adanya di HP (agar login ulang otomatis)</td><td><span class="tag t-ok">Sengaja</span> &mdash; <b>logout wajib menghapusnya</b></td></tr>
+<tr><td>Kolom login PC tidak dikosongkan setelah layar terkunci</td><td><span class="tag t-ok">Sudah diperbaiki</span></td></tr>
+<tr><td>Ganti password dari layar PC tanpa verifikasi password lama</td><td><span class="tag t-ok">Sudah diperbaiki</span></td></tr>
+<tr><td>Blokir Task Manager tidak pernah berfungsi</td><td><span class="tag t-ok">Sudah diperbaiki</span> &mdash; ditulis ke registry per-profil</td></tr>
+<tr><td>Path traversal di endpoint log billing</td><td><span class="tag t-ok">Sudah diperbaiki</span></td></tr>
+<tr><td>Endpoint publik membocorkan <code class="inl">agentToken</code></td><td><span class="tag t-ok">Sudah diperbaiki</span> &rarr; <code class="inl">/pcs/ringkas</code></td></tr>
+<tr><td>Fallback JWT hardcoded di 3 berkas</td><td><span class="tag t-no">Belum</span> &mdash; string itu terbaca publik di repo</td></tr>
+<tr><td>Upload APK/MSI tidak pernah menghapus berkas lama</td><td><span class="tag t-no">Belum</span> &mdash; masih menumpuk</td></tr>
+</tbody></table></div>
+
+<h2 id="perintah">Perintah yang Sering Dipakai</h2>
+<p class="small muted">
+Semua development <b>harus</b> lewat Docker. Jangan pernah menjalankan
+<code class="inl">npm</code>, <code class="inl">node</code>, <code class="inl">psql</code>,
+<code class="inl">flutter</code>, atau <code class="inl">dotnet</code> langsung di host.
+</p>
+
+<div class="codehead">Umum<span></span></div>
+<pre><code>cd /home/warnet/docker/v3netbill        # satu-satunya path project
+
+docker compose ps                       # status container
+docker compose up -d                    # nyalakan
+docker compose logs -f v3netbill-backend  # ikuti log
+docker compose restart v3netbill-backend  # restart paksa (aman untuk sesi)</code></pre>
+
+<div class="codehead">Backend<span></span></div>
+<pre><code>docker compose exec -T v3netbill-backend npm test
+docker compose exec -T v3netbill-backend npm run lint
+docker compose exec -T v3netbill-backend npm run build
+docker compose exec -T v3netbill-backend npx prisma generate
+docker compose exec -T v3netbill-backend npx prisma migrate dev --name &lt;nama&gt;</code></pre>
+
+<div class="codehead">Frontend<span></span></div>
+<pre><code>docker compose exec -T v3netbill-frontend npm run build   # WAJIB untuk deploy
+docker compose exec -T v3netbill-frontend npm run lint
+docker compose exec -T v3netbill-frontend npm run dev      # port 5173</code></pre>
+
+<div class="codehead">Database<span></span></div>
+<pre><code>docker exec postgres-15 psql -U billing_user -d v3netbill
+docker exec postgres-15 psql -U billing_user -d v3netbill -c "&lt;SQL&gt;"</code></pre>
+
+<div class="codehead">Mobile<span></span></div>
+<pre><code>./fl analyze
+./fl test
+./fl build apk --release \
+  --dart-define=API_BASE_URL=https://v3netbill.bilmary.my.id/api \
+  --dart-define=API_WS_URL=wss://v3netbill.bilmary.my.id/session</code></pre>
+
+<div class="codehead">Agent &mdash; validasi lokal (tanpa CI)<span></span></div>
+<pre><code>docker run --rm -v "$PWD/v3NetbillAgent:/w" -w /w \
+  mcr.microsoft.com/dotnet/sdk:8.0 \
+  bash -c 'dotnet build v3NetbillAgent.sln -p:EnableWindowsTargeting=true'</code></pre>
+
+<h4>Setelah setiap langkah</h4>
+<div class="box good"><span class="bt">Daftar periksa wajib</span>
+<ol style="margin:4px 0 0">
+<li>Cek <code class="inl">docker compose logs v3netbill-backend</code> untuk 0 error.</li>
+<li>Pastikan tidak ada <b>karakter asing</b> (CJK, Korea, Rusia) di kode atau pesan
+commit &mdash; repositorinya publik.</li>
+<li>Jangan pernah menjalankan <code class="inl">nest build</code> manual saat
+watcher sedang jalan.</li>
+<li>Jangan commit ke git kecuali diminta.</li>
+</ol>
+</div>
+
+<hr>
+<p class="small muted" style="text-align:center">
+Dokumentasi v3Netbill &middot; halaman ini dilayani oleh backend sendiri
+(<code class="inl">GET /api/dokumentasi</code>, khusus ADMIN) &mdash;
+bukan berkas statis, sehingga tidak bisa diakses tanpa login.
+</p>
+
+</div>
+</main>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ---------- SALIN KODE ---------- */
+  document.addEventListener("click", function(e){
+    var b = e.target.closest(".copybtn");
+    if(!b) return;
+    var box = b.closest(".codehead");
+    var pre = box && box.nextElementSibling;
+    if(!pre) return;
+    var teks = pre.innerText;
+    var selesai = function(){
+      var lama = b.textContent;
+      b.textContent = "Tersalin";
+      setTimeout(function(){ b.textContent = lama; }, 1400);
+    };
+    if(navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(teks).then(selesai, function(){ b.textContent = "Gagal"; });
+    } else {
+      var ta = document.createElement("textarea");
+      ta.value = teks; ta.style.position="fixed"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); selesai(); } catch(err){ b.textContent = "Gagal"; }
+      document.body.removeChild(ta);
+    }
+  });
+
+  /* ---------- PASANG TOMBOL SALIN DI SEMUA BLOK KODE ---------- */
+  document.querySelectorAll("pre").forEach(function(pre){
+    if(!pre.id){
+      pre.id = "blok-" + Math.random().toString(36).slice(2,9);
+    }
+    var h = document.createElement("div");
+    h.className = "codehead";
+    h.innerHTML = '<span>Perintah / kode</span>';
+    var btn = document.createElement("button");
+    btn.className = "copybtn";
+    btn.type = "button";
+    btn.textContent = "Salin";
+    h.appendChild(btn);
+    pre.parentNode.insertBefore(h, pre);
+  });
+
+  /* ---------- NAVIGASI AKTIF ---------- */
+  var tautan = Array.prototype.slice.call(document.querySelectorAll("#nav a"));
+  var bagian = tautan.map(function(a){
+    var el = document.querySelector(a.getAttribute("href"));
+    return el ? { a:a, el:el } : null;
+  }).filter(Boolean);
+
+  function sorot(){
+    var y = window.scrollY + 120, aktif = null;
+    bagian.forEach(function(b){
+      if(b.el.offsetTop <= y) aktif = b;
+    });
+    tautan.forEach(function(a){ a.classList.remove("active"); });
+    if(aktif) aktif.a.classList.add("active");
+  }
+  window.addEventListener("scroll", sorot, {passive:true});
+  window.addEventListener("resize", sorot);
+  sorot();
+
+  /* ---------- PENCARIAN ---------- */
+  var cari = document.getElementById("cari");
+  var kosong = document.createElement("div");
+  kosong.className = "no-res";
+  kosong.textContent = "Tidak ada bagian yang cocok dengan pencarian itu.";
+  document.getElementById("nav").appendChild(kosong);
+
+  /**
+   * Teks yang dicari untuk satu judul = judul itu **plus isi seluruh bagiannya**.
+   *
+   * ⚠️ Dulu pencarian hanya membaca `textContent` dari elemen `<h2>`/`<h3>`, yang
+   * isinya cuma judulnya sendiri. Akibatnya kata yang memang ada di dalam
+   * bagian (mis. "watt" di bagian Struktur Database) **tidak pernah cocok**,
+   * dan hasilnya "tidak ada bagian yang cocok" padahal isinya ada.
+   *
+   * Batas bagian: berhenti di judul berikutnya yang levelnya sama atau lebih tinggi
+   * (h2 menutup semua h3 di bawahnya; h3 ditutup h3 berikutnya).
+   */
+  function kumpulkanTeks(el) {
+    var m = /^H([23])$/.exec(el.tagName);
+    var bagian = [el.textContent || ""];
+    if (!m) return bagian.join(" ").toLowerCase();
+    var level = Number(m[1]);
+    var n = el.nextElementSibling;
+    while (n) {
+      var m2 = /^H([23])$/.exec(n.tagName);
+      if (m2 && Number(m2[1]) <= level) break;
+      bagian.push(n.textContent || "");
+      n = n.nextElementSibling;
+    }
+    return bagian.join(" ").toLowerCase();
+  }
+
+  // Dihitung SEKALI saat halaman siap, bukan tiap ketikan: menghitung ulang
+  // setiap ketikan berarti menggabungkan seluruh isi 50.000 karakter tiap kali.
+  bagian.forEach(function (b) { b.teks = kumpulkanTeks(b.el); });
+
+  var grup = [];
+  document.querySelectorAll("#nav .navgroup").forEach(function (g) { grup.push(g); });
+
+  cari.addEventListener("input", function () {
+    var q = (cari.value || "").toLowerCase().trim();
+    var totalCocok = 0;
+
+    bagian.forEach(function (b) {
+      var g = b.a.closest(".navgroup");
+      var semua = g ? g.querySelectorAll("a") : [b.a];
+      var kena = q === "" || b.teks.indexOf(q) !== -1;
+      semua.forEach(function (a) {
+        var label = (a.textContent || "").toLowerCase();
+        var cocok = q === "" || kena || label.indexOf(q) !== -1;
+        a.classList.toggle("hit-none", !cocok);
+        if (cocok) totalCocok++;
+      });
+    });
+
+    // Setiap grup dinilai sendiri. Kalau satu grup tidak punya yang cocok,
+    // grup itu disembunyikan -- dan grup lain yang sedang cocok tidak terganggu.
+    grup.forEach(function (g) {
+      var ada = [].some.call(g.querySelectorAll("a"), function (a) {
+        return !a.classList.contains("hit-none");
+      });
+      g.style.display = ada ? "" : "none";
+    });
+
+    kosong.style.display = totalCocok > 0 ? "none" : "block";
+  });
+
+  /* ---------- BUKA / TUTUP SEMUA ---------- */
+  var btnExpand = document.getElementById("btn-expand");
+  var semuaDetail = Array.prototype.slice.call(document.querySelectorAll("details"));
+  var semuaBuka = true;
+  btnExpand.addEventListener("click", function(){
+    semuaDetail.forEach(function(d){ d.open = semuaBuka; });
+    semuaBuka = !semuaBuka;
+    btnExpand.textContent = semuaBuka ? "Tutup semua bagian" : "Buka semua bagian";
+  });
+
+  /* ---------- CETAK ---------- */
+  document.getElementById("btn-print").addEventListener("click", function(){
+    window.print();
+  });
+})();
+</script>
+</body>
+</html>

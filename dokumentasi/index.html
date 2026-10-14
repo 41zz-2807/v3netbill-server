@@ -1447,15 +1447,32 @@ menggantung menyala <b>selamanya</b> &mdash; tidak ada perintah kedua yang akan 
 
 <h4>Status PC: sumber kebenaran bukan kolom database</h4>
 <div class="codehead">statusPcDitampilkan()<span></span></div>
-<pre><code>heartbeat basi (&gt; 30 detik, atau null)  -&gt; OFFLINE
-heartbeat segar + ada sesi berjalan      -&gt; ACTIVE
-selain itu                                -&gt; nilai kolom
+<pre><code>sesi dalam masa tenggang (&lt; grace_period_detik)  -&gt; ACTIVE
+heartbeat basi (&gt; 30 detik, atau null)           -&gt; OFFLINE
+heartbeat segar + ada sesi berjalan               -&gt; ACTIVE
+selain itu                                         -&gt; nilai kolom
 
 AMBANG_OFFLINE_MS = 30_000   (heartbeat agent tiap 15 detik)</code></pre>
 <div class="box warn"><span class="bt">Kolom <code class="inl">Pc.status</code> adalah cache</span>
 Kolom itu boleh berisi <code class="inl">OFFLINE</code> di database &mdash; itu normal,
 bukan data rusak. Sumber kebenaran hanya dua: <code class="inl">lastHeartbeatAt</code>
 dan <code class="inl">Session</code> berstatus <code class="inl">BERJALAN</code>.
+</div>
+
+<div class="box info"><span class="bt">Masa tenggang juga menahan status PC</span>
+Sesi yang agentnya sempat terputus <b>tidak langsung dimatikan</b> &mdash; server
+menunggu <code class="inl">grace_period_detik</code> (bawaan 180 detik) sebelum
+menghentikannya dengan alasan <code class="inl">disconnect_timeout</code>.
+Selama itu, PC tetap ditampilkan <code class="inl">ACTIVE</code>, bukan
+<code class="inl">OFFLINE</code>.
+<p style="margin:.6em 0 0">Kenapa perlu begitu: kalau tidak, satu kedipan jaringan
+atau satu restart server membuat <b>seluruh</b> PC di warnet terlihat mati selama
+hampir tiga menit, padahal sesi pelanggan masih berjalan dan masih ditagih.
+Setelah masa tenggang <b>lewat</b>, aturan lama berlaku lagi &mdash; heartbeat
+basi menang dan PC ditampilkan <code class="inl">OFFLINE</code>.</p>
+<p style="margin:.6em 0 0">Kalau fiturnya dimatikan lewat
+<code class="inl">grace_period_detik = 0</code>, tidak ada yang ditahan dan PC
+langsung kembali <code class="inl">OFFLINE</code> begitu heartbeat basi.</p>
 </div>
 
 <h3>Background job (cron)</h3>
@@ -2385,6 +2402,7 @@ semua gejala lain akan menyesatkan.
 <tr><td><code class="inl">ServerUrl</code> salah</td><td>Cek nilai registry; harus <b>ada skemanya</b> dan <b>tanpa</b> <code class="inl">/session</code></td><td>Pasang ulang MSI</td></tr>
 <tr><td>Heartbeat macet (agen¡nf outlive)</td><td>Di log PC: banyak &ldquo;heartbeat gagal&rdquo; padahal <code class="inl">connected=True</code></td><td>Restart service</td></tr>
 <tr><td>Internet / tunnel putus</td><td>Dari PC: buka domain backend</td><td>Periksa jaringan</td></tr>
+<tr><td>Sesi sedang dalam masa tenggang</td><td>Di dashboard: PC tampil <code class="inl">ACTIVE</code> tapi hitung mundur tidak bergerak &rarr; cek <code class="inl">Session.disconnectedAt</code></td><td>Tunggu reconnect, atau tunggu <code class="inl">grace_period_detik</code> habis</td></tr>
 </tbody></table></div>
 <div class="codehead">Heartbeat terakhir semua PC<span></span></div>
 <pre><code>docker exec postgres-15 psql -U billing_user -d v3netbill -c \

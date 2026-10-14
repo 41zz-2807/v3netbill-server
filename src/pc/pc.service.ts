@@ -125,15 +125,25 @@ export class PcService {
       // Sesi ikut diambil karena kalau ada sesi berjalan dan heartbeat-nya
       // segar, status yang benar ACTIVE — bukan nilai kolom `status`, yang bisa
       // tertinggal OFFLINE dari `checkPcOffline()`.
+      //
+      // `disconnectedAt` ikut diambil untuk masa tenggang: sesi yang agentnya
+      // sempat terputus tapi belum terlampaui tetap berstatus ACTIVE, supaya
+      // aplikasi mobile tidak menampilkan PC OFFLINE padahal sesinya hidup.
       this.prisma.session.findMany({
         where: { status: SessionStatus.BERJALAN },
-        select: { pcId: true },
+        select: { pcId: true, disconnectedAt: true },
       }),
     ]);
-    const pcAdaSesi = new Set(sesiBerjalan.map((s) => s.pcId));
+    const gracePeriod = await this.sessionService.getGracePeriod();
+    const bySesi = new Map(sesiBerjalan.map((s) => [s.pcId, s]));
     return pcs.map((pc) => ({
       ...pc,
-      status: statusPcDitampilkan(pc.status, pc.lastHeartbeatAt, pcAdaSesi.has(pc.id)),
+      status: statusPcDitampilkan(
+        pc.status,
+        pc.lastHeartbeatAt,
+        bySesi.get(pc.id) ?? null,
+        gracePeriod,
+      ),
     }));
   }
 
@@ -171,16 +181,24 @@ export class PcService {
         select: {
           pcId: true,
           waktuMulai: true,
+          // Untuk masa tenggang di halaman login (lihat catatan di `findAll()`).
+          disconnectedAt: true,
           account: { select: { tipe: true, sisaWaktuDetik: true } },
         },
       }),
     ]);
 
     const bySesi = new Map(sesiBerjalan.map((s) => [s.pcId, s]));
+    const gracePeriod = await this.sessionService.getGracePeriod();
 
     return pcs.map((pc) => {
       const sesi = bySesi.get(pc.id);
-      const status = statusPcDitampilkan(pc.status, pc.lastHeartbeatAt, !!sesi);
+      const status = statusPcDitampilkan(
+        pc.status,
+        pc.lastHeartbeatAt,
+        sesi ?? null,
+        gracePeriod,
+      );
       if (!sesi) {
         return { namaPc: pc.namaPc, status, tipe: null, sisaDetik: null };
       }

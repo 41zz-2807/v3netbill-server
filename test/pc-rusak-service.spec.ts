@@ -57,6 +57,10 @@ function harness(pc: PcRow, sesiAda: boolean) {
     broadcastPcUpdate: vi.fn(async () => {
       jejak.push('broadcastPcUpdate');
     }),
+    // `findAll()` dan `ringkas()` memakainya untuk menentukan masa tenggang.
+    // Tanpa ini, mock jadi `undefined` dan `sesiDalamMasaTenggang()` tidak
+    // pernah menahan apa pun.
+    getGracePeriod: vi.fn(async () => 180),
   };
 
   const prisma = {

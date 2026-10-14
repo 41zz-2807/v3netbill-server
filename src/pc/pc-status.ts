@@ -48,11 +48,43 @@ export function statusPcEfektif(
 }
 
 /**
+ * Sesi sedang dalam masa tenggang: agent sempat terputus, tapi belum terlampaui.
+ *
+ * Selama masa tenggang ini sesi **masih hidup** dan hitung mundurnya **masih
+ * berjalan** di server — `setInterval` tick-nya tidak bergantung pada socket,
+ * jadi waktu pelanggan tetap terpakai dengan benar. Yang mati hanyalah
+ * koneksinya, dan itu bisa pulih sendiri.
+ *
+ * ⚠️ Grace period 0 atau bukan angka berarti fiturnya dimatikan, jadi TIDAK
+ * ada yang ditahan. Tanpa ini, PC yang hidup tapi fiturnya mati akan tampil
+ * OFFLINE selama 30 detik hanya karena satu heartbeat yang telat.
+ */
+export function sesiDalamMasaTenggang(
+  disconnectedAt: Date | null,
+  gracePeriodDetik: number,
+  now: Date = new Date(),
+): boolean {
+  // ⚠️ `!disconnectedAt`, BUKAN `disconnectedAt === null`. Keduanya menagih
+  // jebakan yang sama seperti `Map.get()` di `getDashboardData()`: kalau
+  // kolomnya `undefined` (benda uji sebagian, atau objek yang belum lengkap),
+  // perbandingan dengan `null` bernilai FALSE dan baris berikutnya langsung
+  // memanggil `.getTime()` pada `undefined` — error runtime, bukan sekadar
+  // status yang salah.
+  if (!disconnectedAt) {
+    return false;
+  }
+  if (!Number.isFinite(gracePeriodDetik) || gracePeriodDetik <= 0) {
+    return false;
+  }
+  return now.getTime() - disconnectedAt.getTime() < gracePeriodDetik * 1000;
+}
+
+/**
  * Status PC yang benar-benar dikirim ke dashboard dan aplikasi mobile.
  *
  * Ada dua sumber yang saling bertentangan, dan karena itu keduanya dipakai:
  *
- * 1. **Heartbeat** — satu-satunya bukti agent masih hidup.
+ * 1. **Heartbeat** — bukti agent masih hidup.
  * 2. **Sesi yang sedang berjalan** — fakta bahwa PC sedang dipakai.
  *
  * `checkPcOffline()` menulis OFFLINE ke kolom `status`, dan yang mengembalikannya
@@ -63,20 +95,29 @@ export function statusPcEfektif(
  * muncul di PC yang sedang tersesi, dan Start itu selalu ditolak dengan
  * "PC sudah memiliki sesi berjalan".
  *
- * ⚠️ Sesi **tidak** boleh mengalahkan heartbeat yang basi. Selama grace period
- * masih ada `Session` BERJALAN sementara agent sudah putus; kalau sesinya yang
- * menang, dashboard menampilkan hitung mundur yang tidak lagi bergerak
- * berdampingan dengan tombol Start — di aplikasi billing angka yang salah lebih
- * buruk daripada tidak ditampilkan.
+ * 🔴 **Sesi DALAM MASA TENGGANG mengalahkan heartbeat yang basi.** Ini kebalikan
+ * dari keputusan lama, dan sekarang justru benar: dengan grace period yang
+ * bekerja, sesi masih hidup dan hitung mundurnya masih berjalan, sehingga tidak
+ * ada angka salah yang ditampilkan. Tanpa ini, satu kedipan jaringan membuat
+ * seluruh PC di warnet tampil OFFLINE selama hampir 3 menit padahal sesinya
+ * baik-baik saja — dan itu persis yang terjadi setiap kali server restart.
+ *
+ * ⚠️ Tapi begitu masa tenggang **lewat**, aturan lama berlaku lagi: heartbeat
+ * basi menang dan PC ditampilkan OFFLINE. Sesi yang sudah terlampaui tidak lagi
+ * memegang apa pun.
  */
 export function statusPcDitampilkan(
   statusKolom: PcStatus,
   lastHeartbeatAt: Date | null,
-  adaSesiBerjalan: boolean,
+  sesi: { disconnectedAt: Date | null } | null,
+  gracePeriodDetik: number,
   now: Date = new Date(),
 ): PcStatus {
+  if (sesi && sesiDalamMasaTenggang(sesi.disconnectedAt, gracePeriodDetik, now)) {
+    return PcStatus.ACTIVE;
+  }
   if (!heartbeatSegar(lastHeartbeatAt, now)) {
     return PcStatus.OFFLINE;
   }
-  return adaSesiBerjalan ? PcStatus.ACTIVE : statusKolom;
+  return sesi ? PcStatus.ACTIVE : statusKolom;
 }

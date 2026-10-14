@@ -620,6 +620,7 @@ export class SessionService implements OnModuleDestroy {
     // Dibaca sekali per payload, bukan per PC — `getDashboardData()` dipanggil
     // tiap 10 detik, jadi satu query untuk semua PC, bukan satu per PC.
     const autoMenit = await this.autoShutdownMenit();
+    const gracePeriod = await this.getGracePeriod();
     const sekarangMs = Date.now();
 
     const accountMap = new Map(accounts.map((a) => [a.id, a]));
@@ -644,12 +645,21 @@ export class SessionService implements OnModuleDestroy {
       // yang menentukan adalah heartbeat — dan kalau ada sesi berjalan dengan
       // heartbeat segar, statusnya ACTIVE apa pun isi kolom.
       //
-      // ⚠️ HARUS `sessionByPc.has(pc.id)`, bukan `session !== null`. `Map.get()`
-      // mengembalikan `undefined` kalau kuncinya tidak ada, dan
-      // `undefined !== null` itu TRUE — sehingga SEMUA PC tanpa sesi ikut
+      // ⚠️ HARUS `sessionByPc.get(pc.id)`, bukan hanya `sessionByPc.has(...)`
+      // di sini. `.get()` mengembalikan `undefined` kalau kuncinya tidak ada,
+      // dan `undefined !== null` itu TRUE — sehingga SEMUA PC tanpa sesi ikut
       // terbaca ACTIVE. Gejalanya persis seperti bug aslinya: PC idle tampil
       // "Aktif" padahal tidak ada sesi sama sekali.
-      const status = statusPcDitampilkan(pc.status, pc.lastHeartbeatAt, sessionByPc.has(pc.id));
+      //
+      // Grace period dibaca SEKALI di luar `map()`, bukan per PC: fungsi ini
+      // dipanggil tiap 10 detik dan tiap broadcast, jadi satu query Setting
+      // per PC akan jadi beban.
+      const status = statusPcDitampilkan(
+        pc.status,
+        pc.lastHeartbeatAt,
+        session ?? null,
+        gracePeriod,
+      );
       if (!session) {
         return {
           id: pc.id,

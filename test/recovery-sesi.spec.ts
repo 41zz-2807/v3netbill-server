@@ -76,7 +76,7 @@ describe('recoverRunningSessions', () => {
     bersihkan(svc, intervals);
   });
 
-  it('hanya mengambil sesi BERJALAN, dan hanya kolom id', async () => {
+  it('hanya mengambil sesi BERJALAN, dan hanya kolom yang dipakai', async () => {
     const findMany = vi.fn().mockResolvedValue([]);
     const { svc, intervals } = buatService(prismaTiruan({ findMany }));
 
@@ -85,7 +85,11 @@ describe('recoverRunningSessions', () => {
     const arg = findMany.mock.calls[0][0] as { where: { status: string }; select: unknown };
     expect(arg.where.status).toBe(SessionStatus.BERJALAN);
     // `select` dipakai supaya tidak menarik relasi yang tidak dibutuhkan.
-    expect(arg.select).toEqual({ id: true });
+    //
+    // ⚠️ `durasiTerpakaiDetik` ikut karena recovery memundurkan jam ke nilai ini
+    // — lihat `test/recovery-mundur-jam.spec.ts`. Tanpa kolom ini, waktu
+    // petitioner yang mati listrik ikut terpotong.
+    expect(arg.select).toEqual({ id: true, durasiTerpakaiDetik: true });
     bersihkan(svc, intervals);
   });
 

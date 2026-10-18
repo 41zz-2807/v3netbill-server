@@ -306,11 +306,36 @@ export class SessionService implements OnModuleDestroy {
    * boleh mencegah sesi pelanggan lain ikut ditick ulang.
    */
   private async recoverRunningSessions(): Promise<void> {
-    let sesi: Array<{ id: string }> = [];
+    // ⚠️ DI SINI jam sesi dip Mundurkan ke pemakaian terakhir yang tercatat.
+    //
+    // Kenapa perlu: server restart karena mati listrik dibunuh OS, jadi event
+    // `disconnect` TIDAK pernah jalan dan `disconnectedAt` tidak pernah ditulis.
+    // Session lalu tetap `BERJALAN` dengan `waktuMulai` di masa lalu, sehingga
+    // `sisaWaktuSekarang()` = `saldo - (now - waktuMulai)` sudah include
+    // berjam-jam gelap. Pelanggan ditagih untuk waktu yang tidak pernah dipakai.
+    //
+    // Bukti nyata: sesi PC004 akun `3333` tercatat `dipakai=12000` (3j20m)
+    // untuk 19:01-22:21, dengan ~1 jam di antaranya adalah mati listrik.
+    //
+    // ⚠️ Ini BUKAN "deteksi mati listrik", dan tidak boleh dijadikan begitu.
+    // Mati listrik tidak bisa dibedakan dari crash server, kabel putus, atau
+    // Postgres mati. Yang diketahui dengan kepastian cuma satu:
+    // `durasiTerpakaiDetik` — detik yang benar-benar terpakai, ditulis tick tiap
+    // detik ke database, jadi selamat dari listrik yang dicabut.
+    //
+    // ⚠️ Mematikan tick TIDAK cukup. Tick hanya menulis; sisa waktu dihitung
+    // saat BACA dari `now - waktuMulai`. Satu-satunya cara memandikan jam
+    // adalah memindahkan `waktuMulai` ke depan — itu yang dilakukan di bawah.
+    //
+    // `disconnectedAt` diisi supaya grace period aktif: tanpa itu
+    // `sesiDalamMasaTenggang()` selalu false dan `checkGracePeriodExpired()`
+    // tidak punya baris untuk diperiksa, jadi sesi di PC yang tidak kembali
+    // akan berjalan terus sampai kehabisan waktu.
+    let sesi: Array<{ id: string; durasiTerpakaiDetik: number }> = [];
     try {
       sesi = await this.prisma.session.findMany({
         where: { status: SessionStatus.BERJALAN },
-        select: { id: true },
+        select: { id: true, durasiTerpakaiDetik: true },
       });
     } catch (e) {
       const pesan = e instanceof Error ? e.message : String(e);
@@ -318,9 +343,29 @@ export class SessionService implements OnModuleDestroy {
       return;
     }
 
+    const now = new Date();
     let hidup = 0;
     let gagal = 0;
+    let mundur = 0;
     for (const s of sesi) {
+      // Dua try/catch TERPISAH, dan urutannya tidak boleh ditukar. Kalau
+      // pemunduran gagal tapi tick ikut dilewati, sesi itu tidak ditagih dan
+      // tidak juga berhenti — berhenti bekerja untuk warnet tanpa ada yang
+      // mengetahuinya. Jadi tick WAJIB dinyalakan apa pun hasil pemunduran.
+      try {
+        const terpakai = Math.max(0, s.durasiTerpakaiDetik ?? 0);
+        await this.prisma.session.update({
+          where: { id: s.id },
+          data: {
+            waktuMulai: new Date(now.getTime() - terpakai * 1000),
+            disconnectedAt: now,
+          },
+        });
+        mundur++;
+      } catch (e) {
+        const pesan = e instanceof Error ? e.message : String(e);
+        this.logger.error(`Recovery sesi ${s.id} gagal memundurkan jam: ${pesan}`);
+      }
       try {
         this.startSessionTick(s.id);
         hidup++;
@@ -333,7 +378,8 @@ export class SessionService implements OnModuleDestroy {
 
     if (sesi.length > 0) {
       this.logger.log(
-        `Recovery: ${hidup} sesi berjalan — tick loop di-restart` +
+        `Recovery: ${hidup} sesi berjalan — tick loop di-restart, ` +
+          `${mundur} jam dimundurkan` +
           (gagal > 0 ? ` (${gagal} gagal)` : ''),
       );
     }

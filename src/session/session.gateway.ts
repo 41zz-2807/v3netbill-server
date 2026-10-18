@@ -66,6 +66,50 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
   private socketPcMap: Map<string, string> = new Map(); // socketId -> pcId
   private dashboardSockets: Set<string> = new Set();
 
+  /**
+   * PC yang TIDAK bisa dikunci saat sesi berhenti karena agent-nya offline.
+   *
+   * 🔴 Bug nyata 17 Okt 2026, PC002, 15:10-15:30 WIB. Rantainya:
+   *
+   * ```
+   * 15:20:03  socket agent putus -> disconnectedAt diisi
+   * 15:22:04  masa tenggang 120 detik habis -> stopSession('disconnect_timeout')
+   *           -> emitSessionStop() memanggil server.to(socketId)
+   *           -> TAPI socket sudah tidak ada, jadi perintahnya DIBAUANG
+   *           -> server sudah IDLE, sisa waktu sudah dikembalikan
+   *           -> overlay masih menampilkan hitung mundur basi
+   * 15:24:09  baru diketuk "Matikan" oleh kasir
+   * ```
+   *
+   * Dua hal yang hilang dan keduanya harus ditutup:
+   *
+   * 1. Perintah `session:stop` yang dibuang. Masa tenggang habis itu PASTI
+   *    berarti agent offline, jadi perintah ini selalu dibuang tepat di kasus
+   *    yang paling penting. Tidak ada antrean, tidak ada retry, tidak ada log.
+   *
+   * 2. Tidak ada sinkronisasi saat reconnect. `kirimUlangSesiKeAgent()` hanya
+   *    mengirim `session:start` kalau sesi masih ada; kalau tidak ada, ia
+   *    me-return kosong dan tidak mengirim apa pun. Akibatnya agent tidak pernah
+   *    diberi tahu "sesi sudah selesai, kembali ke layar login".
+   *
+   * Di sisi agent, `Worker.cs` hanya bisa kembali ke `Locked` lewat
+   * `ForceLockScreenAsync()`, yang dipicu `session:stop` saja
+   * (`ServerConnection.cs`). `_currentState`-nya in-memory, jadi kalau
+   * `session:stop` tidak pernah sampai, PC terkunci bertahan dengan hitung
+   * mundur yang terus turun dari nilai basi — pada insiden 17 Okt sekitar
+   * 87 menit.
+   *
+   * ⚠️ Dampak ekonominya BUKAN uang pelanggan hilang: sisa waktu dikembalikan
+   * dengan benar. Yang bocor adalah arah sebaliknya — pelanggan memakai PC
+   * gratis selama hitung mundur basi itu belum habis.
+   *
+   * ⚠️ Isi set ini TIDAK boleh bertahan selamanya. Kalau PC dihapus atau
+   * tidak pernah kembali, entri tidak akan pernah dibersihkan. Itu karena
+   * ukurannya dibatasi jumlah PC, bukan karena desperate — lihat catatan di
+   * `kirimUlangSesiKeAgent()`.
+   */
+  private menungguDikunci: Set<string> = new Set();
+
   constructor(
     private sessionService: SessionService,
     private jwtService: JwtService,
@@ -165,8 +209,30 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     try {
       const sesi = await this.sessionService.sesiBerjalanUntukAgent(pcId);
       if (!sesi) {
+        // 🔴 Tidak ada sesi. Tapi PC ini mungkin sedang MENUNGGU dikunci:
+        // sesinya sudah ditutup server saat agent-nya offline, jadi
+        // `session:stop` tidak pernah sampai dan overlay masih
+        // menampilkan hitung mundur basi (bug 17 Okt 2026, PC002).
+        //
+        // Syaratnya dua, dan keduanya wajib:
+        // - ada penanda dari `emitSessionStop()` — kalau tidak, ini PC yang
+        //   memang sedang login dan tidak boleh disentuh sama sekali;
+        // - socketnya ada — kalau agent konek tapi belum masuk map, jangan
+        //   kirim apa-apa; `registerAgent()` yang baru akan mengulangi ini.
+        if (this.menungguDikunci.has(pcId) && this.pcSocketMap.has(pcId)) {
+          this.server.to(this.pcSocketMap.get(pcId)!).emit('admin:lock', { pcId });
+          this.menungguDikunci.delete(pcId);
+          this.logger.log(
+            `Layar PC ${pcId} dikunci saat reconnect — sesinya sudah selesai ` +
+              `sebelum agent konek lagi`,
+          );
+        }
         return;
       }
+      // Sesi masih hidup. Kalau ada penanda tertinggal dari peristiwa lama,
+      // penandanya yang basi — dibuang, jangan sampai mengunci layar PC yang
+      // sekarang sedang dipakai pelanggan yang sah.
+      this.menungguDikunci.delete(pcId);
       this.emitSessionStart(pcId, sesi.sessionId, sesi.sisaDetik, sesi.akun);
       this.logger.log(
         `Sesi berjalan dikirim ulang ke agent ${pcId} (sessionId=${sesi.sessionId}, sisa=${sesi.sisaDetik}detik)`,
@@ -1018,6 +1084,23 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     const socketId = this.pcSocketMap.get(pcId);
     if (socketId) {
       this.server.to(socketId).emit('session:stop', { alasan });
+      // Perintah sudah sampai, jadi tidak ada yang perlu diantrikan.
+      this.menungguDikunci.delete(pcId);
+    } else {
+      // 🔴 Socket tidak ada. Perintah "kunci layar" ini akan hilang selamanya
+      // kalau tidak disimpan — dan masa tenggang habis itu PASTI tiba dalam
+      // kondisi socket hilang, jadi tanpa cabang ini perintahnya dibuang di
+      // semua kasus yang justru paling butuh.
+      //
+      // Disimpan sebagai penanda, bukan antrean pesan: yang perlu dikirim
+      // bukan "sesi berhenti" (sudah terlalu basi kalau baru sampai), tapi
+      // "balik ke layar login" — dan itu tetap benar berapa pun lamanya PC
+      // ini offline.
+      this.menungguDikunci.add(pcId);
+      this.logger.warn(
+        `Sesi PC ${pcId} berhenti (${alasan}) sementara agent offline — ` +
+          `layar akan dikunci saat PC ini konek lagi`,
+      );
     }
 
     // 🔴 Hanya "koneksi terputus" yang dikabarikan. Alasan lain sudah terlihat
@@ -1261,17 +1344,42 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
     const { pcId } = data ?? {};
     const socketId = this.pcSocketMap.get(pcId);
-    if (!socketId) {
-      return { success: false, message: 'PC tidak terhubung' };
-    }
+
+    // ⚠️ `unlockPc()` dijalankan DULU, sebelum soket dicek. Urutan ini yang
+    // menentukan uang pelanggan berhenti atau tidak.
+    //
+    // Versi lama mengecek soket lebih dulu dan `return` kalau PC tidak
+    // terhubung — jadi `unlockPc()` TIDAK PERNAH dipanggil. Padahal
+    // `unlockPc()` itu murni sisi server (`prisma.session.findFirst` +
+    // `stopSession`), tidak butuh soket sama sekali. Akibatnya setelah mati
+    // listrik total: PC gelap, soket kosong, dan tagihan terus jalan tanpa
+    // ada tombol apa pun yang bisa menghentikannya dari dashboard atau HP kasir.
+    //
+    // Soket hanya menentukan apakah LAYAR PC bisa dikunci — bukan apakah sesi
+    // bisa dihentikan. Dua hal itu dipisah, dan pesannya dibedakan supaya
+    // kasir tahu persis apa yang terjadi.
     await this.sessionService.unlockPc(pcId);
-    this.server.to(socketId).emit('admin:lock', { pcId });
+    await this.broadcastPcUpdate();
+
+    if (!socketId) {
+      // ⚠️ Sengaja TIDAK menulis `pc_lock` di sini. Log itu berarti "perintah
+      // kunci sudah sampai ke PC", dan PC-nya tidak ada — menulisnya membuat
+      // log aktivitas berbohong: operator menekan KUNCI di PC yang offline,
+      // log menyatakan "PC Dikunci", padahal tidak ada yang dikunci. Jejak
+      // sesi yang benar-benar dihentikan sudah ditulis sendiri oleh
+      // `stopSession()` sebagai "Sesi Berakhir".
+      return {
+        success: true,
+        message:
+          'Sesi dihentikan. PC tidak terhubung, jadi layarnya tidak bisa dikunci dari sini.',
+      };
+    }
     this.broadcastActivityLog('pc_lock', {
       pcId,
       by: this.actorName(client),
       kasirId: client.data.userId,
     });
-    await this.broadcastPcUpdate();
+    this.server.to(socketId).emit('admin:lock', { pcId });
     return { success: true, message: 'Perintah kunci terkirim' };
   }
 
@@ -1285,17 +1393,28 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
     const { pcId } = data ?? {};
     const socketId = this.pcSocketMap.get(pcId);
-    if (!socketId) {
-      return { success: false, message: 'PC tidak terhubung' };
-    }
+
+    // ⚠️ Sama seperti `dashboard:lock_pc`: `unlockPc()` dulu, soket belakangan.
+    // Alasannya identik — sesi yang harus berhenti berhenti di sisi server, dan
+    // `admin:shutdown` hanya bonus untuk benar-benar mematikan daya PC.
     await this.sessionService.unlockPc(pcId);
-    this.server.to(socketId).emit('admin:shutdown', { pcId });
+    await this.broadcastPcUpdate();
+
+    if (!socketId) {
+      // Sama seperti `dashboard:lock_pc`: `pc_shutdown` hanya ditulis kalau
+      // perintahnya benar-benar sampai ke PC.
+      return {
+        success: true,
+        message:
+          'Sesi dihentikan. PC tidak terhubung, jadi perintah mati tidak bisa sampai.',
+      };
+    }
     this.broadcastActivityLog('pc_shutdown', {
       pcId,
       by: this.actorName(client),
       kasirId: client.data.userId,
     });
-    await this.broadcastPcUpdate();
+    this.server.to(socketId).emit('admin:shutdown', { pcId });
     return { success: true, message: 'Perintah mati terkirim' };
   }
 

@@ -740,6 +740,28 @@ export class LaporanService {
     const token = process.env.TELEGRAM_BOT_TOKEN;
     const chatId = process.env.TELEGRAM_CHAT_ID;
     if (!token || !chatId) {
+      // 🔴 WAJIB dicatat. Versi lama `return` lebih dulu tanpa logging, dan
+      // `logger.error` cuma ada di blok `catch` di bawah -- jadi konfigurasi
+      // yang hilang biasanya diam saja.
+      //
+      // Buktinya di produksi: `telegram=false` muncul di ringkasan selama
+      // delapan hari berturut (11-18 Okt 2026) tanpa satu baris error pun,
+      // sementara `TELEGRAM_BOT_TOKEN` ada lengkap di `.env` tapi tidak
+      // pernah disalin ke container oleh docker-compose.yml.
+      //
+      // 🔴 Yang ditulis NAMA variabelnya, bukan nilainya. Isi token bot
+      // adalah rahasia: bocor ke log berarti siapa pun bisa mengirim pesan
+      // atas nama bot itu.
+      const yangHilang = [
+        !token ? 'TELEGRAM_BOT_TOKEN' : null,
+        !chatId ? 'TELEGRAM_CHAT_ID' : null,
+      ]
+        .filter(Boolean)
+        .join(' dan ');
+      this.logger.warn(
+        `Telegram dilewati: ${yangHilang} kosong di dalam container. ` +
+          `Periksa docker-compose.yml (bagian environment) dan .env.`,
+      );
       return { ok: false, error: 'Konfigurasi Telegram belum lengkap' };
     }
 

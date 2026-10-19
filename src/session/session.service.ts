@@ -5,7 +5,21 @@ import * as bcrypt from 'bcrypt';
 import * as crypto from 'node:crypto';
 import { AccountStatus, SessionStatus, PcStatus, AccountType, TransactionType, Prisma } from '@prisma/client';
 import { AMBANG_OFFLINE_MS, statusPcDitampilkan } from '../pc/pc-status.js';
+import {
+  diagnosisButuhTindakan,
+  diagnosisKoneksi,
+  kalimatDiagnosis,
+  type DiagnosisKoneksi,
+} from '../pc/koneksi-diagnosis.js';
 import { PANJANG_PASSWORD_MIN, PASSWORD_DEFAULT } from '../accounts/password.js';
+
+/**
+ * Seberapa sering ringkasan diagnosis ditulis.
+ *
+ * 15 menit: cukup jauh satu-satu agar tidak membanjiri log, dan cukup dekat
+ * supaya operator tidak menunggu lama untuk tahu pemeriksa masih hidup.
+ */
+const RINGKASAN_DIAGNOSIS_MS = 15 * 60 * 1000;
 
 export interface DashboardPcInfo {
   id: string;
@@ -119,6 +133,16 @@ export interface SessionGatewayEvents {
    */
   matikanPcOtomatis(pcId: string): Promise<boolean>;
   /**
+   * Waktu balasan ping transport terakhir yang diterima untuk PC ini, atau
+   * `null` kalau belum pernah ada.
+   *
+   * Ini sinyal kedua, terpisah dari `agent:heartbeat`. Tanpa itu, "agent hang"
+   * dan "koneksi putus" menghasilkan gejala yang persis sama.
+   *
+   * ⚠️ Wajib `null` untuk "belum pernah ada bukti", bukan waktu sekarang.
+   */
+  waktuPongTerakhir(pcId: string): Date | null;
+  /**
    * Kirim `agent:auto_update_config` ke SATU agent.
    *
    * ⚠️ Per-PC, bukan broadcast. Konsep awal memakai sakelar global untuk
@@ -183,6 +207,27 @@ export class SessionService implements OnModuleDestroy {
    */
   private autoShutdownPeringatanTerakhir: string | null = null;
   private gatewayEvents: SessionGatewayEvents | null = null;
+
+  /**
+   * Diagnosis terakhir yang sudah dicatat per PC.
+   *
+   * 🔴 Kenapa disimpan: tanpa ini, checker yang berjalan tiap 10 detik akan
+   * menulis baris yang sama berulang sampai log jadi tidak bisa dibaca.
+   * Yang dicatat hanya saat diagnosis BERUBAH, jadi satu kejadian putus
+   * menghasilkan dua baris (putus, lalu hidup saat konek lagi), bukan ribuan.
+   */
+  private diagnosisTerakhir: Map<string, DiagnosisKoneksi> = new Map();
+
+  /**
+   * Berapa kali tiap diagnosis tercatat dalam satu periode ringkasan.
+   *
+   * ⚠️ Yang dihitung adalah PERUBAHAN status, bukan jumlah cek. Checker
+   * berjalan tiap 10 detik, jadi menghitung cek akan menghasilkan angka
+   * yang hanya dibagi 144 dan tidak memberi informasi apa pun.
+   */
+  private jumlahDiagnosis: Map<DiagnosisKoneksi, number> = new Map();
+
+  private ringkasanDiagnosisInterval: NodeJS.Timeout | null = null;
 
   constructor(
     private prisma: PrismaService,
@@ -1483,11 +1528,57 @@ await this.prisma.pc.update({
         await this.checkGracePeriodExpired();
         await this.checkPcOffline();
         await this.checkAutoShutdown();
+        await this.checkKoneksiDiagnosis();
       } catch (e) {
         const pesan = e instanceof Error ? e.message : String(e);
         this.gatewayEvents?.logTickError(`pemeriksaan berkala: ${pesan}`);
       }
     }, 10000);
+
+    this.ringkasanDiagnosisInterval = setInterval(() => {
+      this.tulisRingkasanDiagnosis();
+    }, RINGKASAN_DIAGNOSIS_MS);
+  }
+
+  /**
+   * Tulis satu baris ringkasan diagnosis per periode.
+   *
+   * 🔴 Baris ini sudah cukup jelas dari log ActivityLog, bukan lewat timer
+   * lain. Fungsinya supaya operator bisa membedakan "tidak ada yang salah"
+   * dari "pemeriksa tidak jalan". Tanpa ringkasan, log kosong identik dengan
+   * log yang tidak pernah ditulis sama sekali.
+   *
+   * Periode awal sengaja menunggu 15 menit penuh: menulis ringkasan nol
+   * setiap restart backend hanya menambah baris sia-sia.
+   */
+  private tulisRingkasanDiagnosis(): void {
+    // ⚠️ WAJIB try/catch. Dipanggil dari setInterval, jadi penolakan di
+    // sini jadi unhandled rejection yang menjatuhkan seluruh proses Node —
+    // bukan cuma menghentikan satu baris log.
+    try {
+      if (this.jumlahDiagnosis.size === 0) {
+        return;
+      }
+
+      const bagian = Array.from(this.jumlahDiagnosis.entries())
+        .map(([diagnosis, jumlah]) => `${diagnosis} ${jumlah}x`)
+        .join(', ');
+
+      const perluTindakan = this.jumlahDiagnosis.get('SUSPICIOUS_AGENT_HANG') ?? 0;
+      const tidakBerdekatan = this.jumlahDiagnosis.get('PUTUS_TIDAK_BERDEKATAN') ?? 0;
+
+      this.gatewayEvents?.broadcastActivityLog('koneksi:diagnosis', {
+        alasan: 'RINGKASAN',
+        keterangan:
+          `${RINGKASAN_DIAGNOSIS_MS / 60000} menit: ${bagian}. ` +
+          `Perlu tindakan ${perluTindakan}, perlu dicurigai ${tidakBerdekatan}.`,
+      });
+
+      this.jumlahDiagnosis.clear();
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      this.gatewayEvents?.logTickError(`ringkasan diagnosis gagal: ${pesan}`);
+    }
   }
 
   /**
@@ -1499,6 +1590,88 @@ await this.prisma.pc.update({
    * mulai, atau sesi berhenti, jadi PC idle yang mati tidak pernah memberi
    * kabar apa pun sama sekali.
    */
+  private async checkKoneksiDiagnosis(): Promise<void> {
+    try {
+      const pcs = await this.prisma.pc.findMany({
+        select: { id: true, namaPc: true, lastHeartbeatAt: true },
+      });
+      const sekarang = new Date();
+
+      for (const pc of pcs) {
+        const hasil = diagnosisKoneksi({
+          terakhirHeartbeat: pc.lastHeartbeatAt,
+          terakhirPong: this.gatewayEvents?.waktuPongTerakhir(pc.id) ?? null,
+          sekarang,
+        });
+
+        const sebelumnya = this.diagnosisTerakhir.get(pc.id);
+        if (sebelumnya === hasil.diagnosis) {
+          continue;
+        }
+        this.diagnosisTerakhir.set(pc.id, hasil.diagnosis);
+
+        // 🔴 Dua observation pertama itu sengaja dibedakan, karena keduanya
+        // salah kalau diperlakukan sama:
+        //
+        // - Pertama kali PC ditemukan sudah offline: itu keadaan yang sudah
+        //   ada sebelum server start, bukan sesuatu yang baru terjadi. Kalau
+        //   ditulis, setiap restart backend membanjiri log billing dengan
+        //   delapan baris yang bukan informasi baru.
+        // - Pertama kali PC ditemukan agent-hang: ini justru keadaan yang
+        //   paling perlu dilihat dan tidak ada dasar pembanding sebelumnya,
+        //   jadi harus ditulis walau "pertama kali".
+        //
+        // Setelah ada pembanding, SEMUA perpindahan ditulis, termasuk
+        // HIDUP -> PUTUS_*. Versi lama diam-diam melewati perpindahan itu,
+        // padahal justru disconnect yang paling ingin dicari operator.
+        const pertamaKali = sebelumnya === undefined;
+        const berubah = !pertamaKali;
+        const perluDicatat = pertamaKali
+          ? diagnosisButuhTindakan(hasil)
+          : berubah;
+
+        if (!perluDicatat) {
+          continue;
+        }
+
+        // ⚠️ Penghitung summary sengaja ada SETELAH penentuannya, bukan
+        // sebelum. Kalau dihitung lebih dulu, "HIDUP 1x" muncul di ringkasan
+        // padahal tidak ada baris HIDUP yang ditulis sama sekali -- karena
+        // HIDUP dari keadaan awal memang sengaja tidak diumumkan. Ringkasan
+        // harus menghitung persis baris yang ditulis, kalau tidak angkanya
+        // tidak cocok dengan isi log dan tidak bisa dipercaya.
+        this.jumlahDiagnosis.set(
+          hasil.diagnosis,
+          (this.jumlahDiagnosis.get(hasil.diagnosis) ?? 0) + 1,
+        );
+
+        this.gatewayEvents?.broadcastActivityLog('koneksi:diagnosis', {
+          pcId: pc.id,
+          pc: pc.namaPc,
+          alasan: hasil.diagnosis,
+          // ⚠️ Kuncinya `keterangan`, BUKAN `detail`. Ada dua pembaca dengan
+          // dua konvensi berbeda: `log-billing.service.ts` mengambil
+          // `payload['keterangan']` untuk menulis berkas, sementara frontend
+          // memetakan kolom Detail dari `detail.detail`. Kalau hanya salah
+          // satu, satu tampilan kosong tanpa error sama sekali.
+          // Sisi frontend diperbaiki di src/lib/log-activity.ts.
+          keterangan: kalimatDiagnosis(hasil),
+        });
+
+        // Only for the case that needs action, so it doesn't drown in offline
+        // PCs that were intentionally shut down.
+        if (diagnosisButuhTindakan(hasil)) {
+          this.logger.warn(
+            `PC ${pc.namaPc} perlu diperiksa: ${kalimatDiagnosis(hasil)}`,
+          );
+        }
+      }
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      this.gatewayEvents?.logTickError(`diagnosis koneksi gagal: ${pesan}`);
+    }
+  }
+
   private async checkPcOffline(): Promise<void> {
     try {
       const batas = new Date(Date.now() - AMBANG_OFFLINE_MS);
@@ -1815,6 +1988,9 @@ async autoShutdownMenit(): Promise<number> {
     this.sessionIntervals.clear();
     if (this.disconnectCheckInterval) {
       clearInterval(this.disconnectCheckInterval);
+    }
+    if (this.ringkasanDiagnosisInterval) {
+      clearInterval(this.ringkasanDiagnosisInterval);
     }
   }
 }

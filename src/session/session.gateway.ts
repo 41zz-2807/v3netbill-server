@@ -110,6 +110,40 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
    */
   private menungguDikunci: Set<string> = new Set();
 
+  /**
+   * Waktu balasan ping transport terakhir per PC.
+   *
+   * 🔴 Ini adalah sinyal KEDUA, terpisah dari `agent:heartbeat`, dan itu
+   * satu-satunya cara membedakan dua kegagalan yang sebelumnya identik:
+   *
+   * - agent hang: proses agent berhenti mengirim heartbeat, tapi socket masih
+   *   sehat karena transport terus balas ping.
+   * - koneksi benar-benar putus: heartbeat dan pong berhenti berdekatan.
+   *
+   * ⚠️ Ping ini milik engine.io, bukan milik kita. Socket.IO sudah meng-ping
+   * agent tiap 25 detik dan memutus koneksi kalau balasan tidak sampai dalam
+   * 20 detik. Kita hanya membaca packet yang masuk. Karena itu tidak ada satu
+   * pun handler yang perlu ditambah di agent, dan fitur ini langsung berlaku
+   * untuk PC yang masih versi lama.
+   *
+   * ⚠️ Sengaja TIDAK dihapus saat socket putus. Nilai terakhir itulah bukti
+   * kapan transport terakhir hidup, dan tanpa itu kasus "berhenti berdekatan"
+   * tidak bisa dihitung.
+   */
+  private terakhirPong: Map<string, Date> = new Map();
+
+  /**
+   * Transport yang sudah memasang listener `packet`.
+   *
+   * ⚠️ `pantauPong()` dipanggil dari `registerAgent()`, yang bisa berjalan
+   * berulang untuk socket yang sama. Tanpa penjaga ini, listener menumpuk
+   * setiap kali register diulang — dan karena komentar di method itu mengklaim
+   * listener sudah dijaga, penumpukan itu lolos dari pembacaan kode.
+   *
+   * Dipakai `WeakSet` supaya socket yang sudah mati tidak tertahan di memori.
+   */
+  private transportSudahDipantau: WeakSet<object> = new WeakSet();
+
   constructor(
     private sessionService: SessionService,
     private jwtService: JwtService,
@@ -457,6 +491,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
     this.pcSocketMap.set(pcId, client.id);
     this.socketPcMap.set(client.id, pcId);
+    this.pantauPong(client, pcId);
 
     // IP diamati dari koneksi socket (bukan diisi manual admin) supaya tetap
     // akurat walau PC klien memakai DHCP dan IP-nya berganti.
@@ -1425,6 +1460,70 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     }
     this.logger.warn(`Dashboard ${client.id} mencoba kontrol tanpa role yang sah`);
     return false;
+  }
+
+  /**
+   * Catat waktu balasan ping transport terakhir untuk PC ini.
+   *
+   * Dipisah dari `registerAgent()` dan dibungkus try/catch sendiri karena
+   * pemanggilnya adalah `handleConnection()`. Kalau gagal di sini, agent PC itu
+   * tidak boleh gagal daftar, dan `registerAgent()` juga sudah memutus socket
+   * lama milik PC lain tepat sebelum pemanggilan ini.
+   *
+   * ⚠️ `registerAgent()` bisa dipanggil berulang untuk socket yang sama, karena
+   * identitas PC datang dari handshake query DAN dari event `agent:register`.
+   * Listener dipasang dua kali kalau tidak dijaga. Listener kedua hanya menulis
+   * nilai yang sama, jadi akibatnya kecil, tapi tetap dijaga supaya tidak
+   * menumpuk tanpa batas.
+   */
+  private pantauPong(client: Socket, pcId: string): void {
+    try {
+      // Koneksi baru berarti transport sudah hidup sekarang. Tanpa baris ini,
+      // PC yang baru konek terlihat "tidak pernah ada pong" sampai pong
+      // pertama datang, dan bisa salah dibaca sebagai tanda mati.
+      this.terakhirPong.set(pcId, new Date());
+
+      const conn = client.conn as unknown as {
+        on?: (event: string, fn: (packet: { type?: string }) => void) => void;
+      } | null;
+      if (!conn || typeof conn.on !== 'function') {
+        this.logger.warn(
+          `PC ${pcId} konek tapi objek transport tidak punya listener packet, ` +
+            `diagnosis agent hang tidak bisa dibedakan untuk PC ini`,
+        );
+        return;
+      }
+
+      if (this.transportSudahDipantau.has(conn)) {
+        // Sudah dipantau pada pemanggilan sebelumnya untuk socket ini. Yang
+        // perlu disegarkan hanya waktu pong terakhir.
+        return;
+      }
+      this.transportSudahDipantau.add(conn);
+
+      conn.on('packet', (packet: { type?: string }) => {
+        // Hanya `pong` yang dihitung. `open` dan `message` datang pada koneksi
+        // yang sama, dan menghitungnya membuat "transport hidup" terbukti dari
+        // sinyal yang bukan bukti.
+        if (packet?.type === 'pong') {
+          this.terakhirPong.set(pcId, new Date());
+        }
+      });
+    } catch (e) {
+      const pesan = e instanceof Error ? e.message : String(e);
+      this.logger.warn(`Gagal memantau pong untuk PC ${pcId}: ${pesan}`);
+    }
+  }
+
+  /**
+   * Waktu balasan ping terakhir yang diterima untuk PC ini, atau `null` kalau
+   * belum pernah ada.
+   *
+   * Dipakai `checkKoneksiDiagnosis()` di service. Sengaja `null`, bukan waktu
+   * sekarang, supaya "belum pernah ada bukti" tidak dianggap "baru saja".
+   */
+  waktuPongTerakhir(pcId: string): Date | null {
+    return this.terakhirPong.get(pcId) ?? null;
   }
 
   /** IP asli PC klien.

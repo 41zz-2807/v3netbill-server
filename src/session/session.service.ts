@@ -104,6 +104,12 @@ export interface SessionGatewayEvents {
     pcId: string,
     alasan: AlasanStop,
     akun?: { kodeUnik: string | null; nama: string | null; tipe: AccountType },
+    /**
+     * Detik yang benar-benar terpakai. Wajib untuk notifikasi "sesi
+     * selesai"; tanpa ini, admin tidak pernah tahu berapa lama pelanggan
+     * bermain.
+     */
+    durasiTerpakaiDetik?: number,
     sisaKembaliDetik?: number,
   ): void;
   broadcastPcUpdate(): Promise<void>;
@@ -1313,6 +1319,7 @@ export class SessionService implements OnModuleDestroy {
         nama: session.account.nama,
         tipe: session.account.tipe,
       },
+      durasiTerpakaiDetik,
       sisaWaktuKembali,
     );
     this.gatewayEvents?.broadcastActivityLog('session:stopped', {

@@ -66,6 +66,72 @@ export class NotifikasiService {
   ) {}
 
   /**
+   * Satu-satunya jalan keluar notifikasi: kirim ke perangkat admin, bersihkan
+   * token yang ditolak FCM, lalu catat hasilnya.
+   *
+   * ⚠️ Token mati WAJIB Dicari memakai indeks aslinya. Versi lama menulis
+   * `hasil.filter((h) => h.tokenMati).map((h, i) => perangkat[i].id)`, dan
+   * `i` di situ adalah indeks DARI ARRAY HASIL FILTER, bukan dari `perangkat`.
+   * Kalau hanya token perangkat kedua yang ditolak FCM, yang terhapus adalah
+   * token perangkat PERTAMA yang masih hidup -- dan admins itu langsung
+   * berhenti menerima notifikasi, tanpa satu pun error yang terlihat.
+   */
+  private async kirimKeAdmin(
+    pesan: {
+      judul: string;
+      isi: string;
+      data: Record<string, string>;
+      channelId: string;
+    },
+    label: string,
+  ): Promise<void> {
+    const perangkat = await this.prisma.perangkat.findMany({
+      where: { user: { role: Role.ADMIN } },
+      select: { id: true, token: true },
+    });
+
+    if (perangkat.length === 0) return;
+
+    const hasil = await Promise.all(
+      perangkat.map((p) => this.fcm.kirim(p.token, pesan)),
+    );
+    const terkirim = hasil.filter((h) => h.ok).length;
+
+    // ⚠️ Indeks diambil sebelum disaring. Lihat catatan di atas.
+    const mati = hasil
+      .map((h, i) => ({ tokenMati: h.tokenMati, id: perangkat[i].id }))
+      .filter((x) => x.tokenMati)
+      .map((x) => x.id);
+
+    if (mati.length > 0) {
+      await this.prisma.perangkat.deleteMany({ where: { id: { in: mati } } });
+      this.logger.log(`${mati.length} token FCM tidak valid lagi, dihapus`);
+    }
+
+    const gagal = hasil.filter((h) => !h.ok && !h.tokenMati);
+    if (terkirim > 0 || gagal.length > 0) {
+      this.logger.log(`${label}: ${terkirim}/${perangkat.length} terkirim`);
+    }
+    for (const h of gagal) {
+      this.logger.warn(`FCM menolak: ${h.kode ?? '-'} ${h.pesan}`);
+    }
+  }
+
+  /** Identitas akun untuk ditampilkan, dengan nama member selalu disensor. */
+  private static identitas(
+    tipe: AccountType,
+    kodeUnik?: string | null,
+    nama?: string | null,
+  ): { jenis: string; identitas: string } {
+    const jenis = tipe === AccountType.MEMBER ? 'Member' : 'Voucher';
+    // Voucher memakai kode unik, member memakai nama. Keduanya tidak boleh
+    // bocor penuh ke layar kunci HP.
+    const identitas =
+      tipe === AccountType.MEMBER ? sensorNama(nama) : (kodeUnik ?? '-');
+    return { jenis, identitas };
+  }
+
+  /**
    * Simpan token perangkat milik user yang sedang login.
    *
    * Role TIDAK pernah dibaca dari body permintaan. Kalau dibaca dari sana,
@@ -126,16 +192,11 @@ export class NotifikasiService {
     sisaKembaliDetik: number,
   ): Promise<void> {
     try {
-      const perangkat = await this.prisma.perangkat.findMany({
-        where: { user: { role: Role.ADMIN } },
-        select: { id: true, token: true },
-      });
-
-      if (perangkat.length === 0) return;
-
-      const jenis = pc.tipe === AccountType.MEMBER ? 'Member' : 'Voucher';
-      const identitas =
-        pc.tipe === AccountType.MEMBER ? sensorNama(pc.nama) : (pc.kodeUnik ?? '-');
+      const { jenis, identitas } = NotifikasiService.identitas(
+        pc.tipe,
+        pc.kodeUnik,
+        pc.nama,
+      );
 
       // Sisa 0 berarti tidak ada yang bisa dikembalikan (mis. sesi yang
       // terputus setelah waktunya habis). Kalimatnya harus jujur, jangan
@@ -143,38 +204,77 @@ export class NotifikasiService {
       const kembalian =
         sisaKembaliDetik > 0 ? `sisa ${formatDurasi(sisaKembaliDetik)} dikembalikan` : 'tanpa sisa';
 
-      const pesan = {
-        judul: 'Koneksi terputus',
-        isi: `${jenis} ${identitas} · ${pc.namaPc} · ${kembalian}`,
-        data: { jenis: 'sesi_terputus', pc: pc.namaPc },
-        channelId: CHANNEL_ID,
-      };
-
-      const hasil = await Promise.all(perangkat.map((p) => this.fcm.kirim(p.token, pesan)));
-      const terkirim = hasil.filter((h) => h.ok).length;
-
-      const mati = hasil
-        .filter((h) => h.tokenMati)
-        .map((h, i) => perangkat[i].id);
-      if (mati.length > 0) {
-        await this.prisma.perangkat.deleteMany({ where: { id: { in: mati } } });
-        this.logger.log(`${mati.length} token FCM tidak valid lagi, dihapus`);
-      }
-
-      const gagal = hasil.filter((h) => !h.ok && !h.tokenMati);
-      if (terkirim > 0 || gagal.length > 0) {
-        this.logger.log(
-          `Notifikasi sesi terputus di ${pc.namaPc}: ${terkirim}/${perangkat.length} terkirim`,
-        );
-      }
-      for (const h of gagal) {
-        this.logger.warn(`FCM menolak: ${h.kode ?? '-'} ${h.pesan}`);
-      }
+      await this.kirimKeAdmin(
+        {
+          judul: 'Koneksi terputus',
+          isi: `${jenis} ${identitas} · ${pc.namaPc} · ${kembalian}`,
+          data: { jenis: 'sesi_terputus', pc: pc.namaPc },
+          channelId: CHANNEL_ID,
+        },
+        `Notifikasi sesi terputus di ${pc.namaPc}`,
+      );
     } catch (err) {
-      // ⚠️ Tidak pernah melempar. Sesi pelanggan sudah berhenti saat method ini
-      // dipanggil; notifikasi yang gagal tidak boleh mengubah apa pun.
+      // ⚠️ Tidak pernah melempar. Sesi pelanggan sudah berhenti saat
+      // method ini dipanggil; notifikasi yang gagal tidak boleh mengubah apa pun.
       this.logger.warn(
         `Gagal mengirim notifikasi sesi terputus: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+   * Kabari berapa lama pelanggan benar-benar bermain, saat sesi berhenti
+   * karena aksi kasir atau waktu habis.
+   *
+   * 🔴 Alasan kenapa ini perlu method sendiri: notifikasi "sesi
+   * dimulai" tidak bisa menjawab pertanyaan ini, karena durasi baru diketahui
+   * setelah sesi berakhir -- bukan saat dimulai. Dan notifikasi "koneksi
+   * terputus" sengaja TIDAK dipakai di sini, supaya disconnect_timeout tetap
+   * terbaca sebagai masalah yang perlu ditindak, bukan sekadar "selesai".
+   */
+  async kirimSesiSelesai(
+    pc: { namaPc: string; tipe: AccountType; kodeUnik?: string | null; nama?: string | null },
+    durasiTerpakaiDetik: number,
+    sisaKembaliDetik: number,
+  ): Promise<void> {
+    try {
+      const { jenis, identitas } = NotifikasiService.identitas(
+        pc.tipe,
+        pc.kodeUnik,
+        pc.nama,
+      );
+
+      // ⚠️ Durasi yang ditulis adalah yang BENAR-BENAR terpakai, bukan
+      // total saldo akun. Kalau bukan, notifikasi akan sering salah
+      // setiap kali sesi berhenti lebih awal.
+      const main = formatDurasi(Math.max(0, Math.floor(durasiTerpakaiDetik)));
+
+      // ⚠️ Sisa 0 ditulis "tanpa sisa", bukan disembunyikan. Waktu
+      // habis memang tidak mengembalikan apa pun, dan operator harus bisa
+      // membedakannya dari sesi yang dihentikan kasir dengan sisa 1 menit.
+      const kembalian =
+        sisaKembaliDetik > 0
+          ? `sisa ${formatDurasi(sisaKembaliDetik)} dikembalikan`
+          : 'tanpa sisa';
+
+      await this.kirimKeAdmin(
+        {
+          judul: 'Sesi selesai',
+          isi:
+            `${jenis} ${identitas} · ${pc.namaPc} · ` +
+            `main ${main} · ${kembalian}`,
+          data: {
+            jenis: 'sesi_selesai',
+            pc: pc.namaPc,
+            durasiDetik: String(Math.max(0, Math.floor(durasiTerpakaiDetik))),
+          },
+          channelId: CHANNEL_ID,
+        },
+        `Notifikasi sesi selesai di ${pc.namaPc}`,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Gagal mengirim notifikasi sesi selesai: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }
@@ -184,53 +284,20 @@ export class NotifikasiService {
     sumber = 'PC',
   ): Promise<void> {
     try {
-      const perangkat = await this.prisma.perangkat.findMany({
-        where: { user: { role: Role.ADMIN } },
-        select: { id: true, token: true },
-      });
-
-      if (perangkat.length === 0) return;
-
-      const jenis = pc.tipe === AccountType.MEMBER ? 'Member' : 'Voucher';
-      // Voucher memakai kode unik, member memakai nama. Keduanya tidak boleh
-      // bocor penuh ke layar kunci.
-      const identitas =
-        pc.tipe === AccountType.MEMBER
-          ? sensorNama(pc.nama)
-          : (pc.kodeUnik ?? '-');
-      const pesan = {
-        judul: 'Sesi dimulai',
-        isi: `${jenis} ${identitas} · ${pc.namaPc} (${sumber})`,
-        data: { jenis: 'sesi_dimulai', pc: pc.namaPc },
-        channelId: CHANNEL_ID,
-      };
-
-      const hasil = await Promise.all(
-        perangkat.map((p) => this.fcm.kirim(p.token, pesan)),
+      const { jenis, identitas } = NotifikasiService.identitas(
+        pc.tipe,
+        pc.kodeUnik,
+        pc.nama,
       );
-
-      const terkirim = hasil.filter((h) => h.ok).length;
-      const mati = hasil
-        .filter((h) => h.tokenMati)
-        .map((h, i) => perangkat[i].id);
-
-      // Token yang ditolak FCM dibersihkan di sini. HP yang di-uninstall atau
-      // token yang sudah kedaluwarsa akan selalu ditolak, jadi menyimpan
-      // hanya menambah-onsent per notifikasi.
-      if (mati.length > 0) {
-        await this.prisma.perangkat.deleteMany({ where: { id: { in: mati } } });
-        this.logger.log(`${mati.length} token FCM tidak valid lagi, dihapus`);
-      }
-
-      const gagal = hasil.filter((h) => !h.ok && !h.tokenMati);
-      if (terkirim > 0 || gagal.length > 0) {
-        this.logger.log(
-          `Notifikasi sesi ${jenis} di ${pc.namaPc}: ${terkirim}/${perangkat.length} terkirim`,
-        );
-      }
-      for (const h of gagal) {
-        this.logger.warn(`FCM menolak: ${h.kode ?? '-'} ${h.pesan}`);
-      }
+      await this.kirimKeAdmin(
+        {
+          judul: 'Sesi dimulai',
+          isi: `${jenis} ${identitas} · ${pc.namaPc} (${sumber})`,
+          data: { jenis: 'sesi_dimulai', pc: pc.namaPc },
+          channelId: CHANNEL_ID,
+        },
+        `Notifikasi sesi ${jenis} di ${pc.namaPc}`,
+      );
     } catch (e) {
       const pesan = e instanceof Error ? e.message : String(e);
       this.logger.warn(`Notifikasi sesi gagal diproses: ${pesan}`);

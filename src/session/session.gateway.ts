@@ -1114,6 +1114,7 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     pcId: string,
     alasan: 'manual' | 'habis' | 'disconnect_timeout',
     akun?: { kodeUnik: string | null; nama: string | null; tipe: AccountType },
+    durasiTerpakaiDetik?: number,
     sisaKembaliDetik?: number,
   ): void {
     const socketId = this.pcSocketMap.get(pcId);
@@ -1138,26 +1139,40 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
       );
     }
 
-    // 🔴 Hanya "koneksi terputus" yang dikabarikan. Alasan lain sudah terlihat
-    // dari notifikasi sesi dimulai (waktu habis) atau memang aksi kasir
-    // sendiri, jadi mengabari keduanya hanya membuat notifikasi tidak berarti.
+    // 🔴 Dua jalan keluar yang BERBEDA, dan mencampurkannya membuat salah
+    // satu informasi hilang:
+    //
+    // - `manual` / `habis` -> "Sesi selesai" berisi berapa lama pelanggan
+    //   bermain. Durasi ini hanya diketahui SELEPAS sesi berakhir, jadi
+    //   notifikasi "Sesi dimulai" tidak mungkin menyediakannya.
+    // - `disconnect_timeout` -> "Koneksi terputus", yang tetap terpisah
+    //   supaya disconnect terbaca sebagai masalah yang perlu ditindak,
+    //   bukan sekadar "selesai".
     //
     // ⚠️ `void` tanpa await: `emitSessionStop` dipanggil dari dalam
     // `stopSession()`, dan menunggu FCM di sana akan menahan penghentian
-    // sesi. Notifikasi tidak boleh memperlESOAT. Kegagalan FCM sendiri
+    // sesi. Notifikasi tidak boleh memperlambat. Kegagalan FCM sendiri
     // sudah ditangkap di dalam service notifikasi.
-    if (alasan === 'disconnect_timeout' && akun) {
+    if (!akun) return;
+    if (alasan === 'disconnect_timeout') {
       void this.kabarSesiTerputus(pcId, akun, sisaKembaliDetik ?? 0);
+    } else {
+      void this.kabarSesiSelesai(
+        pcId,
+        akun,
+        durasiTerpakaiDetik ?? 0,
+        sisaKembaliDetik ?? 0,
+      );
     }
   }
 
-  /**
-   * Kabari perangkat admin bahwa sesi berhenti karena koneksi agent terputus.
-   *
-   * Dibungkus try/catch sendiri supaya kegagalan notifikasi tidak pernah
-   * menjatuhkan proses — kelas bug yang sama sudah pernah kills server.
-   */
-  private async kabarSesiTerputus(
+/**
+ * Kabari perangkat admin bahwa sesi berhenti karena koneksi agent terputus.
+ *
+ * Dibungkus try/catch sendiri supaya kegagalan notifikasi tidak pernah
+ * menjatuhkan proses — kelas bug yang sama sudah pernah kills server.
+ */
+private async kabarSesiTerputus(
     pcId: string,
     akun: { kodeUnik: string | null; nama: string | null; tipe: AccountType },
     sisaKembaliDetik: number,
@@ -1179,6 +1194,40 @@ export class SessionGateway implements OnGatewayInit, OnGatewayConnection, OnGat
     } catch (err) {
       this.logger.warn(
         `Gagal mengirim notifikasi sesi terputus untuk PC ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+
+  /**
+ * Kabari perangkat admin berapa lama pelanggan bermain di PC ini.
+ *
+ * Dibungkus try/catch sendiri supaya kegagalan notifikasi tidak pernah
+ * menjatuhkan proses — kelas bug yang sama sudah pernah kills server.
+ */
+private async kabarSesiSelesai(
+    pcId: string,
+    akun: { kodeUnik: string | null; nama: string | null; tipe: AccountType },
+    durasiTerpakaiDetik: number,
+    sisaKembaliDetik: number,
+  ): Promise<void> {
+    try {
+      const pc = await this.prisma.pc.findUnique({
+        where: { id: pcId },
+        select: { namaPc: true },
+      });
+      await this.notifikasiService.kirimSesiSelesai(
+        {
+          namaPc: pc?.namaPc ?? 'PC',
+          tipe: akun.tipe,
+          kodeUnik: akun.kodeUnik,
+          nama: akun.nama,
+        },
+        durasiTerpakaiDetik,
+        sisaKembaliDetik,
+      );
+    } catch (err) {
+      this.logger.warn(
+        `Gagal mengirim notifikasi sesi selesai untuk PC ${pcId}: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
   }

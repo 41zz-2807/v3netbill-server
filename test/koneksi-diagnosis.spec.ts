@@ -3,9 +3,11 @@ import {
   AMBANG_BERDEKATAN_MS,
   AMBANG_HB_BASIH_MS,
   AMBANG_PONG_BASIH_MS,
+  MIN_HANG_BERTAHAN,
   diagnosisButuhTindakan,
   diagnosisKoneksi,
   kalimatDiagnosis,
+  type HasilDiagnosis,
 } from '../src/pc/koneksi-diagnosis.js';
 
 /**
@@ -57,7 +59,32 @@ describe('diagnosisKoneksi', () => {
       sekarang: SEKARANG,
     });
     expect(h.diagnosis).toBe('SUSPICIOUS_AGENT_HANG');
-    expect(diagnosisButuhTindakan(h)).toBe(true);
+  });
+
+  it('agen hang yang belum bertahan TIDAK memicu tindakan', () => {
+    // 🔴 Diperbaiki setelah DIUKUR. Dari 5 disconnect produksi, 4 punya
+    // tahap `SUSPICIOUS_AGENT_HANG` yang persis 10 detik sebelum turun ke
+    // `PUTUS_*` -- heartbeat basi di 30 detik, pong basi di 45 detik, jadi
+    // disconnect bersih selalu lewat jendela 15 detik itu. Kalau tahap ini
+    // langsung berteriak, setiap disconnect normal jadi alarm palsu.
+    const h = diagnosisKoneksi({
+      terakhirHeartbeat: lalu(45),
+      terakhirPong: lalu(4),
+      sekarang: SEKARANG,
+    });
+    const bertahanSatu: HasilDiagnosis = { ...h, bertahan: 1 };
+    expect(diagnosisButuhTindakan(bertahanSatu)).toBe(false);
+  });
+
+  it('agen hang yang bertahan cukup DOES trigger tindakan', () => {
+    // Hang sungguhan bertahan: heartbeat basi sementara pong terus mengalir.
+    const h = diagnosisKoneksi({
+      terakhirHeartbeat: lalu(45),
+      terakhirPong: lalu(4),
+      sekarang: SEKARANG,
+    });
+    const bertahan: HasilDiagnosis = { ...h, bertahan: MIN_HANG_BERTAHAN };
+    expect(diagnosisButuhTindakan(bertahan)).toBe(true);
   });
 
   it('putus bersama: heartbeat dan pong basi berdekatan', () => {
@@ -82,13 +109,19 @@ describe('diagnosisKoneksi', () => {
     expect(h.selisihMs).toBeLessThanOrEqual(AMBANG_BERDEKATAN_MS);
   });
 
-  it('ambang berdekatan 10 detik: tepat di batas masih berdekatan', () => {
+  it('ambang berdekatan 40 detik: tepat di batas masih berdekatan', () => {
+    // ⚠️ Angka 40 detik bukan tebakan. Heartbeat tiap 15 detik dan pong tiap
+    // 25 detik, keduanya di server -- jadi saat proses agent mati, waktu
+    // sinyal terakhirnya bisa jatuh di mana saja dalam rentang 0-40 detik.
+    // Selisih 10,5 dan 11,2 detik yang tercatat di produksi DULU diberi label
+    // "perlu dicurigai", padahal itu disconnect bersih yang paling sering.
     const h = diagnosisKoneksi({
-      terakhirHeartbeat: lalu(60),
-      terakhirPong: lalu(50),
+      terakhirHeartbeat: lalu(85),
+      terakhirPong: lalu(45),
       sekarang: SEKARANG,
     });
     expect(h.selisihMs).toBe(AMBANG_BERDEKATAN_MS);
+    expect(h.diagnosis).toBe('PUTUS_BERSAMA');
   });
 
   it('tidak ada sinyal sama sekali dianggap basi, bukan dianggap baru', () => {
@@ -147,13 +180,18 @@ describe('diagnosisKoneksi', () => {
   it('ambang pong 45 detik: heartbeat masih hidup tapi transport basi', () => {
     // Ping server tiap 25 detik, jadi 45 detik berarti satu pong hilang.
     // Kombinasi ini nyaris mustahil secara fisik karena heartbeat juga lewat
-    // transport yang sama, tapi harus tetap punya jawaban yang jelas. Selisihnya
-    // 40 detik, jauh dari ambang, jadi bukan restart bersih.
+    // transport yang sama, tapi harus tetap punya jawaban yang jelas.
+    //
+    // 🔴 Selisihnya 40 detik -- PASPAS sama dengan ambang yang baru. Kalau
+    // keadaan ini decide purely lewat aturan selisih, hasilnya "restart
+    // bersih" yang jelas salah: transportnya masih rusak. Cabang eksplisit
+    // di produksi yang mencegah ini, jadi tesnya dikunci di sini.
     const h = diagnosisKoneksi({
       terakhirHeartbeat: lalu(5),
       terakhirPong: lalu(AMBANG_PONG_BASIH_MS / 1000),
       sekarang: SEKARANG,
     });
+    expect(h.selisihMs).toBe(40_000);
     expect(h.diagnosis).toBe('PUTUS_TIDAK_BERDEKATAN');
   });
 
@@ -178,24 +216,38 @@ describe('diagnosisKoneksi', () => {
     expect(kalimatDiagnosis(h)).toContain('PERLU DICIKAT');
   });
 
-  it('ambang berdekatan: tepat 10 detik masih dianggap restart bersih', () => {
-    // ⚠️ Batasnya INKLUSIF. Selisih tepat 10.000 ms masih "berdekatan";
+  it('ambang berdekatan: tepat 40 detik masih restart bersih', () => {
+    // ⚠️ Batasnya INKLUSIF. Selisih tepat 40.000 ms masih "berdekatan";
     // satu milidetik di atasnya sudah tidak.
     const tepat = diagnosisKoneksi({
-      terakhirHeartbeat: lalu(60),
-      terakhirPong: lalu(50),
+      terakhirHeartbeat: lalu(85),
+      terakhirPong: lalu(45),
       sekarang: SEKARANG,
     });
     expect(tepat.selisihMs).toBe(AMBANG_BERDEKATAN_MS);
     expect(tepat.diagnosis).toBe('PUTUS_BERSAMA');
 
     const lewat = diagnosisKoneksi({
-      terakhirHeartbeat: lalu(60),
-      terakhirPong: lalu(49),
+      terakhirHeartbeat: lalu(86),
+      terakhirPong: lalu(45),
       sekarang: SEKARANG,
     });
-    expect(lewat.selisihMs).toBe(11_000);
+    expect(lewat.selisihMs).toBe(41_000);
     expect(lewat.diagnosis).toBe('PUTUS_TIDAK_BERDEKATAN');
+  });
+
+  it('selisih yang terukur di produksi tidak lagi salah label', () => {
+    // 🔴 Regresi untuk data nyata 19 Okt. Dua dari lima disconnect bersih
+    // punya selisih 10,5 dan 11,2 detik, dan ambang lama 10 detik melabeli
+    // keduanya "perlu dicurigai". Itu noise pada kejadian yang paling sering.
+    for (const selisihDetik of [0.6, 1.8, 9.8, 10.5, 11.2]) {
+      const h = diagnosisKoneksi({
+        terakhirHeartbeat: lalu(60 + selisihDetik),
+        terakhirPong: lalu(60),
+        sekarang: SEKARANG,
+      });
+      expect(h.diagnosis).toBe('PUTUS_BERSAMA');
+    }
   });
 });
 
@@ -212,15 +264,31 @@ describe('kalimatDiagnosis', () => {
     expect(teks).toContain('pong 2d');
   });
 
-  it('menyatakan agent hang secara eksplisit', () => {
+  it('menyatakan agent hang yang bertahan secara eksplisit', () => {
     const h = diagnosisKoneksi({
       terakhirHeartbeat: lalu(45),
       terakhirPong: lalu(4),
       sekarang: SEKARANG,
     });
-    const teks = kalimatDiagnosis(h);
+    const teks = kalimatDiagnosis({ ...h, bertahan: MIN_HANG_BERTAHAN });
     expect(teks).toContain('PERLU DICIKAT');
     expect(teks).toContain('socket hidup');
+    // ⚠️ Lamanya juga disebut, supaya operator tahu ini bukan sekali lihat.
+    expect(teks).toContain(`${MIN_HANG_BERTAHAN} pemeriksaan berturut`);
+  });
+
+  it('agen hang yang masih sesaat TIDAK berteriak', () => {
+    // 🔴 Kalau kalimat stage ini mengandi "PERLU DICIKAT", setiap
+    // disconnect bersih akan mengulang alarm palsu -- dan operator akan
+    // berhenti mempercayai baris ini untuk semua keadaan.
+    const h = diagnosisKoneksi({
+      terakhirHeartbeat: lalu(45),
+      terakhirPong: lalu(4),
+      sekarang: SEKARANG,
+    });
+    const teks = kalimatDiagnosis({ ...h, bertahan: 1 });
+    expect(teks).not.toContain('PERLU DICIKAT');
+    expect(teks).toContain('masih sesaat');
   });
 
   it('hanya menyebut restart kalau dua-duanya memang berdekatan', () => {
@@ -236,7 +304,10 @@ describe('kalimatDiagnosis', () => {
       sekarang: SEKARANG,
     });
     expect(kalimatDiagnosis(berdekatan)).toMatch(/restart/);
-    expect(kalimatDiagnosis(berdekatan)).toMatch(/selisih 2d/);
+    expect(kalimatDiagnosis(berdekatan)).toMatch(/selisih 2\.0d/);
+    // ⚠️ Ambang ikut tercetak, jadi operator tidak perlu menghitung sendiri
+    // untuk memahami kenapa sebuah selisih disebut berdekatan atau tidak.
+    expect(kalimatDiagnosis(berdekatan)).toContain('ambang 40d');
 
     const tidakBerdekatan = diagnosisKoneksi({
       terakhirHeartbeat: lalu(300),
@@ -253,12 +324,12 @@ describe('kalimatDiagnosis', () => {
       terakhirPong: lalu(46),
       sekarang: SEKARANG,
     });
-    expect(kalimatDiagnosis(h)).toContain('selisih 254d');
+    expect(kalimatDiagnosis(h)).toContain('selisih 254.0d');
   });
 
   it('agen hang tidak diklaim sebagai koneksi putus', () => {
     // ⚠️ Dua kasus ini kelihatan mirip di log kalau selisihnya tidak
-    // dicetak. Bahayanya arahnya berlawanan: salah baca "koneksi putus" sebagai
+    // dicetak. Bahaya arahnya berlawanan: salah baca "koneksi putus" sebagai
     // normal membuat agent hang tidak pernah diburu.
     const h = diagnosisKoneksi({
       terakhirHeartbeat: lalu(300),
@@ -266,7 +337,15 @@ describe('kalimatDiagnosis', () => {
       sekarang: SEKARANG,
     });
     expect(h.diagnosis).toBe('SUSPICIOUS_AGENT_HANG');
-    expect(kalimatDiagnosis(h)).toMatch(/PERLU DICIKAT/);
+    // ⚠️ Diuji pada tahap yang MENETAP. Tahap yang sesaat memang sengaja
+    // tidak berteriak, jadi di situ kata "PERLU DICIKAT" justru tidak boleh
+    // dicari.
+    expect(kalimatDiagnosis({ ...h, bertahan: MIN_HANG_BERTAHAN })).toMatch(
+      /PERLU DICIKAT/,
+    );
+    expect(kalimatDiagnosis({ ...h, bertahan: MIN_HANG_BERTAHAN })).not.toMatch(
+      /restart/,
+    );
   });
 });
 

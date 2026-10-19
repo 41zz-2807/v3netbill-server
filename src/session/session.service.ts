@@ -9,7 +9,9 @@ import {
   diagnosisButuhTindakan,
   diagnosisKoneksi,
   kalimatDiagnosis,
+  MIN_HANG_BERTAHAN,
   type DiagnosisKoneksi,
+  type HasilDiagnosis,
 } from '../pc/koneksi-diagnosis.js';
 import { PANJANG_PASSWORD_MIN, PASSWORD_DEFAULT } from '../accounts/password.js';
 
@@ -226,6 +228,20 @@ export class SessionService implements OnModuleDestroy {
    * yang hanya dibagi 144 dan tidak memberi informasi apa pun.
    */
   private jumlahDiagnosis: Map<DiagnosisKoneksi, number> = new Map();
+  /**
+   * 🔴 Berapa kali berturut-turut tiap PC terlihat dalam
+   * `SUSPICIOUS_AGENT_HANG`. Dipakai `diagnosisButuhTindakan`.
+   */
+  private hangBertahan: Map<string, number> = new Map();
+  /**
+   * 🔴 Dipisah dari `jumlahDiagnosis` SENGSJA.
+   *
+   * Sebelumnya "Perlu tindakan" diambil dari jumlah baris
+   * `SUSPICIOUS_AGENT_HANG`, jadi tahap transien ikut terhitung sebagai yang
+   * perlu ditangani. Di produksi itu menghasilkan "Perlu tindakan 1" pada
+   * disconnect yang benar-benar bersih, hampir setiap saat.
+   */
+  private jumlahPerluTindakan: number = 0;
 
   private ringkasanDiagnosisInterval: NodeJS.Timeout | null = null;
 
@@ -1564,7 +1580,12 @@ await this.prisma.pc.update({
         .map(([diagnosis, jumlah]) => `${diagnosis} ${jumlah}x`)
         .join(', ');
 
-      const perluTindakan = this.jumlahDiagnosis.get('SUSPICIOUS_AGENT_HANG') ?? 0;
+      // 🔴 `jumlahPerluTindakan`, BUKAN jumlah baris
+      // `SUSPICIOUS_AGENT_HANG`. Yang kedua menghitung tahap transien yang
+      // otomatis muncul di setiap disconnect bersih, sehingga ringkasan
+      // pernah melaporkan "Perlu tindakan 1" padahal tidak ada yang perlu
+      // ditangani sama sekali.
+      const perluTindakan = this.jumlahPerluTindakan;
       const tidakBerdekatan = this.jumlahDiagnosis.get('PUTUS_TIDAK_BERDEKATAN') ?? 0;
 
       this.gatewayEvents?.broadcastActivityLog('koneksi:diagnosis', {
@@ -1575,6 +1596,11 @@ await this.prisma.pc.update({
       });
 
       this.jumlahDiagnosis.clear();
+      // ⚠️ WAJIB ikut direset. Kalau tidak, "Perlu tindakan" akan
+      // terus bertambah dari window sebelumnya dan tidak pernah kembali
+      // ke nol -- persis jenis angka yang lama-lama membuat orang
+      // berhenti mempercayai ringkasan.
+      this.jumlahPerluTindakan = 0;
     } catch (e) {
       const pesan = e instanceof Error ? e.message : String(e);
       this.gatewayEvents?.logTickError(`ringkasan diagnosis gagal: ${pesan}`);
@@ -1604,8 +1630,41 @@ await this.prisma.pc.update({
           sekarang,
         });
 
+        // 🔴 Penghitung bertahan untuk `SUSPICIOUS_AGENT_HANG`.
+        //
+        // HANYA state itu yang dihitung; sisanya disetel ulang ke 0. Kalau
+        // tidak, PC yang sempat hang lalu nyala lagi akan bringing
+        // penghitung lamanya saat hang berikutnya -- dan tahap yang
+        // sebenarnya cuma sesaat akan langsung dianggap menetap.
+        //
+        // ⚠️ Diperbarui SEBELUM cek `sebelumnya === hasil.diagnosis`,
+        // karena stage pemeriksaan ini memang harus jalan pada setiap
+        // iterasi. Kalau tidak, stage yang berulang tidak pernah menambah.
+        const bertahan =
+          hasil.diagnosis === 'SUSPICIOUS_AGENT_HANG'
+            ? (this.hangBertahan.get(pc.id) ?? 0) + 1
+            : 0;
+        this.hangBertahan.set(pc.id, bertahan);
+        const hasilBertahan: HasilDiagnosis = { ...hasil, bertahan };
+
         const sebelumnya = this.diagnosisTerakhir.get(pc.id);
-        if (sebelumnya === hasil.diagnosis) {
+
+        // 🔴 `melintasiTahan` harus dicek SEBELUM penjaga "diagnosis tidak
+        // berubah".
+        //
+        // Alasannya: tanpa ini, hang yang benar-benar menetap TIDAK PERNAH
+        // dilaporkan sama sekali -- pemeriksaan pertama dihitung `bertahan` 1
+        // dan ditahan, pemeriksaan berikutnya sudah state-nya sama persis jadi
+        // kena `continue`, dan seterusnya. Jadi ambang bertahan hanya
+        // berlaku untuklog, bukan untuk alerting.
+        //
+        // Nilainya tepat satu kali per episode, karena `bertahan` naik terus
+        // setiap pemeriksaan.
+        const melintasiTahan =
+          hasil.diagnosis === 'SUSPICIOUS_AGENT_HANG' &&
+          bertahan === MIN_HANG_BERTAHAN;
+
+        if (sebelumnya === hasil.diagnosis && !melintasiTahan) {
           continue;
         }
         this.diagnosisTerakhir.set(pc.id, hasil.diagnosis);
@@ -1641,28 +1700,36 @@ await this.prisma.pc.update({
         // harus menghitung persis baris yang ditulis, kalau tidak angkanya
         // tidak cocok dengan isi log dan tidak bisa dipercaya.
         this.jumlahDiagnosis.set(
-          hasil.diagnosis,
-          (this.jumlahDiagnosis.get(hasil.diagnosis) ?? 0) + 1,
+          hasilBertahan.diagnosis,
+          (this.jumlahDiagnosis.get(hasilBertahan.diagnosis) ?? 0) + 1,
         );
+
+        // 🔴 Yang ini dipisah dari penghitung di atas. Satu tahap
+        // `SUSPICIOUS_AGENT_HANG` yang cuma sesaat tetap boleh ditulis ke
+        // log, tapi TIDAK boleh menambah "Perlu tindakan" -- kalau tidak,
+        // setiap disconnect bersih akan mengulang alarm palsu.
+        if (diagnosisButuhTindakan(hasilBertahan)) {
+          this.jumlahPerluTindakan += 1;
+        }
 
         this.gatewayEvents?.broadcastActivityLog('koneksi:diagnosis', {
           pcId: pc.id,
           pc: pc.namaPc,
-          alasan: hasil.diagnosis,
+          alasan: hasilBertahan.diagnosis,
           // ⚠️ Kuncinya `keterangan`, BUKAN `detail`. Ada dua pembaca dengan
           // dua konvensi berbeda: `log-billing.service.ts` mengambil
           // `payload['keterangan']` untuk menulis berkas, sementara frontend
           // memetakan kolom Detail dari `detail.detail`. Kalau hanya salah
           // satu, satu tampilan kosong tanpa error sama sekali.
           // Sisi frontend diperbaiki di src/lib/log-activity.ts.
-          keterangan: kalimatDiagnosis(hasil),
+          keterangan: kalimatDiagnosis(hasilBertahan),
         });
 
-        // Only for the case that needs action, so it doesn't drown in offline
-        // PCs that were intentionally shut down.
-        if (diagnosisButuhTindakan(hasil)) {
+        // ⚠️ Hanya untuk yang benar-benar perlu tindakan, supaya log server
+        // tidak riuh oleh PC yang sengaja dimatikan operator.
+        if (diagnosisButuhTindakan(hasilBertahan)) {
           this.logger.warn(
-            `PC ${pc.namaPc} perlu diperiksa: ${kalimatDiagnosis(hasil)}`,
+            `PC ${pc.namaPc} perlu diperiksa: ${kalimatDiagnosis(hasilBertahan)}`,
           );
         }
       }

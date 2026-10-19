@@ -109,8 +109,16 @@ describe('checkKoneksiDiagnosis', () => {
     expect(log[0].event).toBe('koneksi:diagnosis');
   });
 
-  it('agen hang ditulis sekali dan menyebut keadaannya', async () => {
+  it('agen hang SESAT hanya dicatat setelah bertahan, dan tetap satu kali', async () => {
     const { svc, log } = buatService(60, 4);
+
+    // 🔴 Pemeriksaan pertama: `bertahan` masih 1, jadi sengaja tidak ditulis.
+    // Dari 5 disconnect produksi, 4 punya tahap persis seperti ini -- mereka
+    // semuanya berakhir sebagai `PUTUS_*` yang bersih.
+    await svc.checkKoneksiDiagnosis();
+    expect(log).toHaveLength(0);
+
+    // Pemeriksaan kedua: `bertahan` 2, sekarang ditulis.
     await svc.checkKoneksiDiagnosis();
     expect(log).toHaveLength(1);
     expect(log[0].payload['alasan']).toBe('SUSPICIOUS_AGENT_HANG');
@@ -121,6 +129,27 @@ describe('checkKoneksiDiagnosis', () => {
     // karena allow-listnya diam-diam melewatkan kunci yang tidak dikenal.
     expect(String(log[0].payload['keterangan'])).toContain('PERLU DICIKAT');
     expect(log[0].payload['detail']).toBeUndefined();
+
+    // 🔴 Setelah itu tidak boleh mengulang, walaupun hang-nya menetap.
+    // Ini yang dijaga oleh `melintasiTahan`, yang nilainya hanya satu kali
+    // per episode karena `bertahan` naik tiap pemeriksaan.
+    await svc.checkKoneksiDiagnosis();
+    await svc.checkKoneksiDiagnosis();
+    expect(log).toHaveLength(1);
+  });
+
+  it('agen hang menetap yang SEBENARNYA menetap tetap dilaporkan', async () => {
+    // ⚠️ Penjaga "diagnosis tidak berubah" ada supaya log tidak―― membanjiri.
+    // Kalau penjaga itu jalan sebelum ambang bertahan diperiksa, hang yang
+    // benar-benar menetap justru tidak akan PERNAH dilaporkan sama sekali.
+    // Tes ini ada justru untuk menjaga arah itu.
+    const { svc, log } = buatService(60, 4);
+    await svc.checkKoneksiDiagnosis();
+    await svc.checkKoneksiDiagnosis();
+    await svc.checkKoneksiDiagnosis();
+    await svc.checkKoneksiDiagnosis();
+    expect(log).toHaveLength(1);
+    expect(log[0].payload['alasan']).toBe('SUSPICIOUS_AGENT_HANG');
   });
 
   it('PC yang sengaja mati tidak memicu catatan pertama', async () => {
@@ -178,6 +207,7 @@ describe('checkKoneksiDiagnosis', () => {
 
   it('pulih dari agent hang dicatat sekali', async () => {
     const { svc, log, usia } = buatService(60, 4);
+    await svc.checkKoneksiDiagnosis();
     await svc.checkKoneksiDiagnosis();
     expect(log).toHaveLength(1);
     expect(log[0].payload['alasan']).toBe('SUSPICIOUS_AGENT_HANG');
@@ -270,6 +300,7 @@ describe('tulisRingkasanDiagnosis', () => {
     // dan jumlah sebenarnya jadi tidak pernah terlihat.
     const { svc, log, usia } = buatService(60, 4);
     await svc.checkKoneksiDiagnosis();
+    await svc.checkKoneksiDiagnosis();
 
     svc.tulisRingkasanDiagnosis();
     svc.tulisRingkasanDiagnosis();
@@ -289,11 +320,31 @@ describe('tulisRingkasanDiagnosis', () => {
 
   it('ringkasan menyebut jumlah yang perlu tindakan', async () => {
     const { svc, log } = buatService(60, 4);
+    // 🔴 Dua pemeriksaan, bukan satu. `jumlahPerluTindakan` sengaja tidak
+    // menghitung tahap sesaat -- di produksi itu menghasilkan "Perlu
+    // tindakan 1" pada disconnect yang benar-benar bersih, hampir tiap kali.
+    await svc.checkKoneksiDiagnosis();
+    expect(log).toHaveLength(0);
     await svc.checkKoneksiDiagnosis();
     svc.tulisRingkasanDiagnosis();
 
     const ringkasan = log.find((b) => b.payload['alasan'] === 'RINGKASAN');
     expect(String(ringkasan!.payload['keterangan'])).toContain('Perlu tindakan 1');
+  });
+
+  it('ringkasan TIDAK menghitung tahap sesaat sebagai perlu tindakan', async () => {
+    // 🔴 Regresi untuk data 19 Okt: disconnect bersih menghasilkan satu
+    // tahap `SUSPICIOUS_AGENT_HANG` yang sesaat, dan lama-lama baris itu
+    // dihitung sebagai "Perlu tindakan 1" padahal tidak ada yang perlu
+    // diperiksa.
+    const { svc, log } = buatService(60, 4);
+    await svc.checkKoneksiDiagnosis();
+    svc.tulisRingkasanDiagnosis();
+
+    // Tidak ada baris sama sekali -- tahap sesaat tidak boleh masuk log.
+    expect(log.filter((b) => b.payload['alasan'] === 'RINGKASAN')).toHaveLength(
+      0,
+    );
   });
 
   it('kegagalan ringkasan tidak melempar keluar', async () => {
